@@ -78,6 +78,56 @@
             "key": "show_estimated_total",
             "label": "Show Estimated Total Time",
             "defaultValue": false
+        },
+        {
+            "type": "group",
+            "key": "",
+            "label": "",
+            "title": "Stage Directions"
+        },
+        {
+            "type": "select",
+            "key": "stage_direction_delimiter",
+            "label": "Stage direction markers",
+            "defaultValue": "none",
+            "options": [
+                {
+                    "label": "None (disabled)",
+                    "value": "none"
+                },
+                {
+                    "label": "[Square brackets]",
+                    "value": "square"
+                },
+                {
+                    "label": "(Parentheses)",
+                    "value": "round"
+                },
+                {
+                    "label": "{Curly braces}",
+                    "value": "curly"
+                }
+            ]
+        },
+        {
+            "type": "select",
+            "key": "stage_direction_display",
+            "label": "How to show stage directions",
+            "defaultValue": "dimmed",
+            "options": [
+                {
+                    "label": "Normal (unchanged)",
+                    "value": "normal"
+                },
+                {
+                    "label": "Dimmed (in parentheses)",
+                    "value": "dimmed"
+                },
+                {
+                    "label": "Hidden",
+                    "value": "hidden"
+                }
+            ]
         }
     ]
 }

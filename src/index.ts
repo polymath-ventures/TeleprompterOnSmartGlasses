@@ -8,6 +8,12 @@ import {
 } from '@mentra/sdk';
 import { TranscriptProcessor } from './utils/src/text-wrapping/TranscriptProcessor';
 import { convertLineWidth } from './utils/src/text-wrapping/convertLineWidth';
+import {
+  stripStageDirections,
+  transformStageDirectionsForDisplay,
+  type DelimiterType,
+  type DisplayMode,
+} from './utils/src/stageDirections';
 
 // Configuration constants
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 80;
@@ -44,6 +50,12 @@ class TeleprompterManager {
   private minWordsForMatch: number = 3; // Minimum words needed for a reliable match (reduced to 1)
   private lineOffset: number = 0; // Offset the line position by 1 to show the match on the 2nd line
 
+  // Stage direction properties
+  private stageDirectionDelimiter: DelimiterType = 'none'; // Which delimiter marks stage directions
+  private stageDirectionDisplay: DisplayMode = 'dimmed'; // How to display stage directions
+  private textForSpeechMatching: string = ''; // Text with stage directions stripped for speech matching
+  private linesForSpeechMatching: string[] = []; // Lines with stage directions stripped
+
   constructor(text: string, lineWidth: number = 38, scrollSpeed: number = 120, autoReplay: boolean = false, speechScrollEnabled: boolean = true, showEstimatedTotal: boolean = true) {
     this.text = text || this.getDefaultText();
     this.lineWidth = lineWidth;
@@ -72,8 +84,26 @@ class TeleprompterManager {
     const oldPosition = this.currentLinePosition;
     const oldAccumulator = this.linePositionAccumulator;
 
-    // Split the text into lines
-    this.lines = this.transcript.wrapText(this.text, this.lineWidth);
+    // Prepare text for display based on stage direction settings
+    let textForDisplay: string;
+    if (this.stageDirectionDisplay === 'hidden') {
+      // For hidden mode, strip stage directions BEFORE wrapping so line widths are correct
+      textForDisplay = stripStageDirections(this.text, this.stageDirectionDelimiter);
+    } else {
+      // For normal/dimmed modes, transform for display (dimmed converts delimiters to parentheses)
+      textForDisplay = transformStageDirectionsForDisplay(
+        this.text,
+        this.stageDirectionDelimiter,
+        this.stageDirectionDisplay
+      );
+    }
+
+    // Split the display text into lines
+    this.lines = this.transcript.wrapText(textForDisplay, this.lineWidth);
+
+    // Prepare text for speech matching (always stripped of stage directions)
+    this.textForSpeechMatching = stripStageDirections(this.text, this.stageDirectionDelimiter);
+    this.linesForSpeechMatching = this.transcript.wrapText(this.textForSpeechMatching, this.lineWidth);
 
     if (!preservePosition) {
       this.currentLinePosition = 0;
@@ -85,8 +115,8 @@ class TeleprompterManager {
       this.linePositionAccumulator = oldAccumulator;
     }
 
-    // Calculate average words per line
-    this.avgWordsPerLine = this.transcript.estimateWordsPerLine(this.text);
+    // Calculate average words per line (use speech matching text for accurate WPM)
+    this.avgWordsPerLine = this.transcript.estimateWordsPerLine(this.textForSpeechMatching);
     if (this.avgWordsPerLine <= 0) this.avgWordsPerLine = 5; // Fallback to prevent division by zero
 
     console.log(`Average words per line: ${this.avgWordsPerLine}`);
@@ -464,23 +494,29 @@ class TeleprompterManager {
 
     /**
    * Find the best match position for current speech buffer in the teleprompter text
+   * Uses linesForSpeechMatching which has stage directions stripped.
    * @returns Line number where speech was found, or -1 if no good match
    */
   private findSpeechMatchPosition(): number {
-    if (this.speechBuffer.length < this.minWordsForMatch || this.lines.length === 0) {
+    // Use speech matching lines (stage directions stripped)
+    const linesToSearch = this.linesForSpeechMatching.length > 0
+      ? this.linesForSpeechMatching
+      : this.lines;
+
+    if (this.speechBuffer.length < this.minWordsForMatch || linesToSearch.length === 0) {
       return -1;
     }
 
         // Search window - only look forward, never backward
     const searchStartLine = this.currentLinePosition; // Start from current position, never behind
     const searchEndLine = Math.min(
-      this.lines.length,
+      linesToSearch.length,
       this.currentLinePosition + this.numberOfLines + 1 // Much larger lookahead
     );
 
     console.log(`[SEARCH DEBUG] Searching lines ${searchStartLine} to ${searchEndLine} (current: ${this.currentLinePosition})`);
 
-    const searchLines = this.lines.slice(searchStartLine, searchEndLine);
+    const searchLines = linesToSearch.slice(searchStartLine, searchEndLine);
     // Filter out empty lines from search text
     const nonEmptyLines = searchLines.filter(line => line && line.trim().length > 0);
 
@@ -624,15 +660,21 @@ class TeleprompterManager {
   }
 
     /**
-   * Estimate line number from word position in search area
+   * Estimate line number from word position in search area.
+   * Uses linesForSpeechMatching for consistent position mapping.
    */
   private estimateLineFromWordPosition(wordPosition: number, searchStartLine: number): number {
     if (this.avgWordsPerLine <= 0) return searchStartLine;
 
+    // Use speech matching lines for position estimation
+    const linesToUse = this.linesForSpeechMatching.length > 0
+      ? this.linesForSpeechMatching
+      : this.lines;
+
     // More accurate line estimation by counting actual words in lines
     let wordCount = 0;
-    for (let lineIdx = searchStartLine; lineIdx < this.lines.length; lineIdx++) {
-      const line = this.lines[lineIdx];
+    for (let lineIdx = searchStartLine; lineIdx < linesToUse.length; lineIdx++) {
+      const line = linesToUse[lineIdx];
       const lineWords = line ? line.toLowerCase()
         .replace(/[^\w\s'-]/g, ' ')
         .split(/\s+/)
@@ -684,6 +726,42 @@ class TeleprompterManager {
    */
   getScrollingMode(): string {
     return this.speechScrollEnabled ? 'SPEECH-BASED' : 'TIME-BASED';
+  }
+
+  /**
+   * Set the stage direction delimiter type.
+   * When changed, reprocesses text to apply new filtering.
+   */
+  setStageDirectionDelimiter(delimiter: DelimiterType): void {
+    if (this.stageDirectionDelimiter !== delimiter) {
+      this.stageDirectionDelimiter = delimiter;
+      this.processText(true); // Preserve position
+    }
+  }
+
+  /**
+   * Get the current stage direction delimiter
+   */
+  getStageDirectionDelimiter(): DelimiterType {
+    return this.stageDirectionDelimiter;
+  }
+
+  /**
+   * Set the stage direction display mode.
+   * When changed, reprocesses text to apply new display transformation.
+   */
+  setStageDirectionDisplay(displayMode: DisplayMode): void {
+    if (this.stageDirectionDisplay !== displayMode) {
+      this.stageDirectionDisplay = displayMode;
+      this.processText(true); // Preserve position
+    }
+  }
+
+  /**
+   * Get the current stage direction display mode
+   */
+  getStageDirectionDisplay(): DisplayMode {
+    return this.stageDirectionDisplay;
   }
 
   /**
@@ -827,6 +905,18 @@ class TeleprompterApp extends TpaServer {
       console.log(`Show estimated total changed for user ${userId}: ${oldValue} -> ${newValue}`);
       this.applySettings(session, sessionId, userId);
     });
+
+    // Handle stage direction delimiter changes
+    session.settings.onValueChange('stage_direction_delimiter', (newValue, oldValue) => {
+      console.log(`Stage direction delimiter changed for user ${userId}: ${oldValue} -> ${newValue}`);
+      this.applySettings(session, sessionId, userId);
+    });
+
+    // Handle stage direction display mode changes
+    session.settings.onValueChange('stage_direction_display', (newValue, oldValue) => {
+      console.log(`Stage direction display changed for user ${userId}: ${oldValue} -> ${newValue}`);
+      this.applySettings(session, sessionId, userId);
+    });
   }
 
   /**
@@ -846,10 +936,12 @@ class TeleprompterApp extends TpaServer {
       const autoReplay = session.settings.get<boolean>('auto_replay', false);
       const speechScrollEnabled = session.settings.get<boolean>('speech_scroll_enabled', true);
       const showEstimatedTotal = session.settings.get<boolean>('show_estimated_total', true);
+      const stageDirectionDelimiter = session.settings.get<string>('stage_direction_delimiter', 'none') as DelimiterType;
+      const stageDirectionDisplay = session.settings.get<string>('stage_direction_display', 'dimmed') as DisplayMode;
 
       const lineWidth = convertLineWidth(lineWidthString, false);
 
-      console.log(`Applied settings for user ${userId}: lineWidth=${lineWidth}, scrollSpeed=${scrollSpeed}, numberOfLines=${numberOfLines}, autoReplay=${autoReplay}, speechScrollEnabled=${speechScrollEnabled}, showEstimatedTotal=${showEstimatedTotal}`);
+      console.log(`Applied settings for user ${userId}: lineWidth=${lineWidth}, scrollSpeed=${scrollSpeed}, numberOfLines=${numberOfLines}, autoReplay=${autoReplay}, speechScrollEnabled=${speechScrollEnabled}, showEstimatedTotal=${showEstimatedTotal}, stageDirectionDelimiter=${stageDirectionDelimiter}, stageDirectionDisplay=${stageDirectionDisplay}`);
 
       // Create or update teleprompter manager
       let teleprompterManager = this.userTeleprompterManagers.get(userId);
@@ -874,6 +966,8 @@ class TeleprompterApp extends TpaServer {
         teleprompterManager.setAutoReplay(autoReplay);
         teleprompterManager.setSpeechScrollEnabled(speechScrollEnabled);
         teleprompterManager.setShowEstimatedTotal(showEstimatedTotal);
+        teleprompterManager.setStageDirectionDelimiter(stageDirectionDelimiter);
+        teleprompterManager.setStageDirectionDisplay(stageDirectionDisplay);
       }
 
       console.log(`Text changed: ${textChanged}`);
