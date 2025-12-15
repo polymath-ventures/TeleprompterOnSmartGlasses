@@ -795,6 +795,84 @@ class TeleprompterManager {
 
     return Math.min(position, maxPosition);
   }
+
+  /**
+   * Check if current visible window has speakable content.
+   * When speech scrolling is enabled, if all visible lines are stage directions
+   * (empty in linesForSpeechMatching), the teleprompter would stall.
+   * This method checks for that condition.
+   * @returns true if there is speakable content, false if all visible lines are stage directions only
+   */
+  hasVisibleSpeakableContent(): boolean {
+    if (!this.speechScrollEnabled) {
+      return true; // Not relevant for time-based scrolling
+    }
+
+    // Use speech matching lines to check for speakable content
+    const linesToCheck = this.linesForSpeechMatching.length > 0
+      ? this.linesForSpeechMatching
+      : this.lines;
+
+    // Check if any visible line has speakable content
+    for (let i = 0; i < this.numberOfLines && this.currentLinePosition + i < linesToCheck.length; i++) {
+      const line = linesToCheck[this.currentLinePosition + i];
+      if (line && line.trim().length > 0) {
+        return true; // Found speakable content
+      }
+    }
+
+    return false; // All visible lines are stage directions only
+  }
+
+  /**
+   * Auto-advance past stage direction-only content.
+   * When speech scrolling is enabled and all visible lines are stage directions,
+   * automatically advance to the next line with speakable content.
+   * @returns true if position was advanced, false otherwise
+   */
+  autoAdvancePastStageDirections(): boolean {
+    if (!this.speechScrollEnabled) {
+      return false; // Only applies to speech-based scrolling
+    }
+
+    if (this.hasVisibleSpeakableContent()) {
+      return false; // Has speakable content, no need to advance
+    }
+
+    // Use speech matching lines to find next speakable content
+    const linesToCheck = this.linesForSpeechMatching.length > 0
+      ? this.linesForSpeechMatching
+      : this.lines;
+
+    const maxPosition = Math.max(0, this.lines.length - this.numberOfLines);
+
+    // Find next position with speakable content
+    let nextPosition = this.currentLinePosition + 1;
+    while (nextPosition <= maxPosition) {
+      // Check if this position has any speakable content in the visible window
+      let hasSpeakable = false;
+      for (let i = 0; i < this.numberOfLines && nextPosition + i < linesToCheck.length; i++) {
+        const line = linesToCheck[nextPosition + i];
+        if (line && line.trim().length > 0) {
+          hasSpeakable = true;
+          break;
+        }
+      }
+
+      if (hasSpeakable) {
+        console.log(`[AUTO-ADVANCE] Advancing from line ${this.currentLinePosition} to ${nextPosition} (skipping stage direction-only content)`);
+        this.currentLinePosition = nextPosition;
+        this.linePositionAccumulator = 0;
+        return true;
+      }
+
+      nextPosition++;
+    }
+
+    // Reached end of text with no more speakable content
+    console.log(`[AUTO-ADVANCE] Reached end of speakable content at line ${this.currentLinePosition}`);
+    return false;
+  }
 }
 
 /**
@@ -1146,6 +1224,13 @@ class TeleprompterApp extends TpaServer {
           // Display current text
           const textToDisplay = teleprompterManager.getCurrentVisibleText();
           this.showTextToUser(session, sessionId, textToDisplay);
+
+          // Auto-advance if all visible lines are stage directions (speech scrolling only)
+          // This prevents stalling when the user has spoken through content and
+          // the remaining visible lines are all stage directions
+          if (teleprompterManager.isSpeechScrollEnabled()) {
+            teleprompterManager.autoAdvancePastStageDirections();
+          }
 
           // Check if we've reached the end
           if (teleprompterManager.isAtEnd() && !timers.endInterval) {
