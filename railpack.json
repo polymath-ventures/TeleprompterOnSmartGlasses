@@ -1,4 +1,0 @@
-{
-  "$schema": "https://schema.railpack.com",
-  "excludeFiles": [".env", ".env.*", ".env.example", ".env.local"]
-}
