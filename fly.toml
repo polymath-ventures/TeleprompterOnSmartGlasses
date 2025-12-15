@@ -1,4 +1,4 @@
-# fly.toml app configuration file generated for teleprompteronsmartglasses on 2025-12-15T16:55:46Z
+# fly.toml app configuration file generated for teleprompteronsmartglasses on 2025-12-15T17:52:32Z
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
@@ -8,19 +8,16 @@ primary_region = 'lax'
 
 [build]
 
-[env]
-  PORT = "3000"
-
 [http_service]
   internal_port = 3000
   force_https = true
   auto_stop_machines = 'stop'
   auto_start_machines = true
-  min_machines_running = 1
+  min_machines_running = 0
   processes = ['app']
 
 [[vm]]
   memory = '1gb'
   cpu_kind = 'shared'
   cpus = 1
-  memory_mb = 256
+  memory_mb = 512
