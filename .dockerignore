@@ -5,10 +5,9 @@ dist
 .vscode
 *.log
 npm-debug.log*
-# .env is needed for development
-# .env
+# Exclude .env files - secrets should be set via platform environment variables
+.env
 .env.*
-!.env
 .DS_Store
 README.md
 .gitignore
