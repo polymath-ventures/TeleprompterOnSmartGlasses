@@ -798,13 +798,24 @@ class TeleprompterManager {
 }
 
 /**
+ * Tracks all timers for a session to prevent orphaned timers and race conditions
+ */
+interface SessionTimers {
+  initialDisplay?: NodeJS.Timeout;  // 1-second initial display timeout
+  scrollDelay?: NodeJS.Timeout;     // 5-second delay before scrolling starts
+  scrollInterval?: NodeJS.Timeout;  // Main scroll interval
+  endInterval?: NodeJS.Timeout;     // End-of-text display interval
+  restartDelay?: NodeJS.Timeout;    // Auto-replay restart delay
+}
+
+/**
  * TeleprompterApp - Main application class for the Teleprompter
  * that extends TpaServer for seamless integration with AugmentOS
  */
 class TeleprompterApp extends TpaServer {
-  // Maps to track user teleprompter managers and active scrollers
+  // Maps to track user teleprompter managers and active session timers
   private userTeleprompterManagers = new Map<string, TeleprompterManager>();
-  private sessionScrollers = new Map<string, NodeJS.Timeout>();
+  private sessionTimers = new Map<string, SessionTimers>();
 
   constructor() {
     if (!MENTRAOS_API_KEY) {
@@ -832,13 +843,7 @@ class TeleprompterApp extends TpaServer {
       // Apply initial settings
       await this.applySettings(session, sessionId, userId);
 
-      // Show initial text
-      const teleprompterManager = this.userTeleprompterManagers.get(userId);
-      if (teleprompterManager) {
-        this.showTextToUser(session, sessionId, teleprompterManager.getCurrentVisibleText());
-      }
-
-      // Start scrolling
+      // Start scrolling (this registers the session and shows initial text)
       this.startScrolling(session, sessionId, userId);
 
     } catch (error) {
@@ -847,10 +852,7 @@ class TeleprompterApp extends TpaServer {
       const teleprompterManager = new TeleprompterManager('', 38, 120);
       this.userTeleprompterManagers.set(userId, teleprompterManager);
 
-      // Show initial text
-      this.showTextToUser(session, sessionId, teleprompterManager.getCurrentVisibleText());
-
-      // Start scrolling
+      // Start scrolling (this registers the session and shows initial text)
       this.startScrolling(session, sessionId, userId);
     }
   }
@@ -988,42 +990,33 @@ class TeleprompterApp extends TpaServer {
   protected async onStop(sessionId: string, userId: string, reason: string): Promise<void> {
     console.log(`Session ${sessionId} stopped: ${reason}`);
 
-    // Stop scrolling for this session
+    // Stop all timers for this session (this also removes from sessionTimers map)
     this.stopScrolling(sessionId);
-
-    // Immediately remove the session from our maps to prevent further updates
-    this.sessionScrollers.delete(sessionId);
 
     // Clean up teleprompter manager if this was the last session for this user
     let hasOtherSessions = false;
 
     try {
-        const activeSessions = (this as any).getSessions?.() || [];
-
-        for (const [activeSessionId, session] of Object.entries(activeSessions)) {
-            if (activeSessionId !== sessionId) {
-                const sessionObj = session as any;
-                if (sessionObj.userId === userId ||
-                    sessionObj.user === userId ||
-                    sessionObj.getUserId?.() === userId) {
-                    hasOtherSessions = true;
-                    break;
-                }
-            }
+      // Check if there are other active sessions for this user
+      for (const [activeSessionId] of this.sessionTimers.entries()) {
+        if (activeSessionId !== sessionId && activeSessionId.includes(userId)) {
+          hasOtherSessions = true;
+          break;
         }
+      }
 
-        // If no other sessions, clean up the teleprompter manager
-        if (!hasOtherSessions) {
-            const teleprompterManager = this.userTeleprompterManagers.get(userId);
-            if (teleprompterManager) {
-                teleprompterManager.clear();
-                teleprompterManager.resetPosition();
-                this.userTeleprompterManagers.delete(userId);
-                console.log(`[User ${userId}]: All sessions closed, teleprompter manager destroyed`);
-            }
+      // If no other sessions, clean up the teleprompter manager
+      if (!hasOtherSessions) {
+        const teleprompterManager = this.userTeleprompterManagers.get(userId);
+        if (teleprompterManager) {
+          teleprompterManager.clear();
+          teleprompterManager.resetPosition();
+          this.userTeleprompterManagers.delete(userId);
+          console.log(`[User ${userId}]: All sessions closed, teleprompter manager destroyed`);
         }
+      }
     } catch (e) {
-        console.error('Error cleaning up session:', e);
+      console.error('Error cleaning up session:', e);
     }
   }
 
@@ -1031,9 +1024,8 @@ class TeleprompterApp extends TpaServer {
    * Displays text to the user using the SDK's layout API
    */
   private showTextToUser(session: TpaSession, sessionId: string, text: string): void {
-
     // Check if the session is still active
-    if (!this.sessionScrollers.has(sessionId)) {
+    if (!this.isSessionActive(sessionId)) {
       console.log(`[Session ${sessionId}]: Session is no longer active, not sending text`);
       return;
     }
@@ -1046,6 +1038,8 @@ class TeleprompterApp extends TpaServer {
         this.stopScrolling(sessionId);
         return;
       }
+
+      console.log(`[Session ${sessionId}]: Displaying text wall (${text.length} chars)`);
 
       // Use the SDK's layout API to display the text
       session.layouts.showTextWall(text, {
@@ -1068,8 +1062,8 @@ class TeleprompterApp extends TpaServer {
    * Starts scrolling the teleprompter text for a session
    */
   private startScrolling(session: TpaSession, sessionId: string, userId: string): void {
-    // Check if we already have a scroller for this session
-    if (this.sessionScrollers.has(sessionId)) {
+    // Check if we already have timers for this session - clean up first
+    if (this.sessionTimers.has(sessionId)) {
       this.stopScrolling(sessionId);
     }
 
@@ -1082,155 +1076,164 @@ class TeleprompterApp extends TpaServer {
 
     // Check if the session is still active before creating intervals
     try {
-      // Try to access a property of the session to check if it's still valid
-      // This will throw an error if the session is closed
       const _ = (session as any).layouts;
     } catch (error) {
       console.log(`[Session ${sessionId}]: Session is no longer active, not starting scrolling`);
       return;
     }
 
-        // Set up speech-based scrolling if enabled
-    let transcriptionUnsubscribe: (() => void) | null = null;
+    // IMPORTANT: Register session IMMEDIATELY before any async operations
+    // This ensures all subsequent checks pass
+    const timers: SessionTimers = {};
+    this.sessionTimers.set(sessionId, timers);
+    console.log(`[Session ${sessionId}]: Session registered, starting teleprompter`);
+
+    // Set up speech-based scrolling if enabled
     if (teleprompterManager.isSpeechScrollEnabled()) {
       try {
-        console.log(`[Session ${sessionId}]: Setting up SPEECH-BASED scrolling for user ${userId} (time-based scrolling disabled)`);
+        console.log(`[Session ${sessionId}]: Setting up SPEECH-BASED scrolling for user ${userId}`);
 
-        transcriptionUnsubscribe = session.events.onTranscription((data) => {
+        const transcriptionUnsubscribe = session.events.onTranscription((data) => {
           try {
-            // Check if the session is still active
-            if (!this.sessionScrollers.has(sessionId)) {
+            if (!this.isSessionActive(sessionId)) {
               return;
             }
 
             const speechText = data.text?.trim();
             if (speechText) {
-              console.log(`[Session ${sessionId}]: Processing speech input: "${speechText}" (isFinal: ${data.isFinal})`);
+              console.log(`[Session ${sessionId}]: Processing speech: "${speechText}" (final: ${data.isFinal})`);
               teleprompterManager.processSpeechInput(speechText, data.isFinal);
             }
           } catch (error) {
-            console.error(`[Session ${sessionId}]: Error processing speech input:`, error);
+            console.error(`[Session ${sessionId}]: Error processing speech:`, error);
           }
         });
 
-        // Store the unsubscribe function for cleanup
         this.addCleanupHandler(transcriptionUnsubscribe);
-
-        console.log(`[Session ${sessionId}]: Speech transcription listener set up successfully`);
+        console.log(`[Session ${sessionId}]: Speech transcription listener set up`);
       } catch (error) {
         console.error(`[Session ${sessionId}]: Failed to set up speech transcription:`, error);
-        // Continue with time-based scrolling even if speech setup fails
       }
     } else {
-      console.log(`[Session ${sessionId}]: Using TIME-BASED scrolling for user ${userId} (speech-based scrolling disabled)`);
+      console.log(`[Session ${sessionId}]: Using TIME-BASED scrolling for user ${userId}`);
     }
 
-    // Show the initial lines immediately
-    // Show the initial lines with a 1 second delay
-    setTimeout(() => {
+    // Show initial text after 1 second delay
+    timers.initialDisplay = setTimeout(() => {
+      if (!this.isSessionActive(sessionId)) return;
+      console.log(`[Session ${sessionId}]: Showing initial text`);
       this.showTextToUser(session, sessionId, teleprompterManager.getCurrentVisibleText());
     }, 1000);
 
-    // Create a timeout for the initial delay
-    const delayTimeout = setTimeout(() => {
-      // Create interval to scroll the text
-      const scrollInterval = setInterval(() => {
+    // Start scrolling after 5 second delay
+    timers.scrollDelay = setTimeout(() => {
+      if (!this.isSessionActive(sessionId)) return;
+
+      console.log(`[Session ${sessionId}]: Starting scroll interval`);
+
+      // Create the main scroll interval
+      timers.scrollInterval = setInterval(() => {
         try {
-          // Check if the session is still active
-          if (!this.sessionScrollers.has(sessionId)) {
-            clearInterval(scrollInterval);
+          if (!this.isSessionActive(sessionId)) {
             return;
           }
 
-          // Only advance by time if speech scrolling is disabled
+          // Advance position if time-based scrolling
           if (!teleprompterManager.isSpeechScrollEnabled()) {
-            // Advance the position
             teleprompterManager.advancePosition();
           }
 
-          // Get current text to display (always update display regardless of scroll mode)
+          // Display current text
           const textToDisplay = teleprompterManager.getCurrentVisibleText();
-
-          // Show the text
           this.showTextToUser(session, sessionId, textToDisplay);
 
           // Check if we've reached the end
-          if (teleprompterManager.isAtEnd()) {
+          if (teleprompterManager.isAtEnd() && !timers.endInterval) {
             console.log(`[Session ${sessionId}]: Reached end of teleprompter text`);
 
-            // Create a new interval to keep showing text after scrolling stops
-            const endInterval = setInterval(() => {
+            // Create end interval for showing end message
+            timers.endInterval = setInterval(() => {
               try {
-                // Check if the session is still active
-                if (!this.sessionScrollers.has(sessionId)) {
-                  clearInterval(endInterval);
+                if (!this.isSessionActive(sessionId)) {
                   return;
                 }
 
                 const endText = teleprompterManager.getCurrentVisibleText();
                 this.showTextToUser(session, sessionId, endText);
 
-                // If we're showing the end message, check if we should restart
                 if (teleprompterManager.isShowingEndMessage()) {
-                  const shouldRestart = teleprompterManager.getAutoReplay();
-                  if (shouldRestart) {
-                    // Stop the current intervals
-                    clearInterval(endInterval);
-                    clearInterval(scrollInterval);
-                    this.sessionScrollers.delete(sessionId);
+                  if (teleprompterManager.getAutoReplay()) {
+                    // Clear current timers and schedule restart
+                    if (timers.endInterval) clearInterval(timers.endInterval);
+                    if (timers.scrollInterval) clearInterval(timers.scrollInterval);
+                    timers.endInterval = undefined;
+                    timers.scrollInterval = undefined;
 
-                    // Wait 5 seconds then restart
-                    setTimeout(() => {
+                    timers.restartDelay = setTimeout(() => {
+                      if (!this.isSessionActive(sessionId)) return;
                       console.log(`[Session ${sessionId}]: Restarting teleprompter for auto-replay`);
                       teleprompterManager.resetPosition();
+                      // Clean up and restart
+                      this.sessionTimers.delete(sessionId);
                       this.startScrolling(session, sessionId, userId);
                     }, 5000);
                   } else {
-                    // If not auto-replaying, just stop everything
-                    clearInterval(endInterval);
+                    // Stop everything
                     this.stopScrolling(sessionId);
                     this.userTeleprompterManagers.delete(userId);
-                    console.log(`[Session ${sessionId}]: Finished showing end message and cleaned up teleprompter manager for user ${userId}`);
+                    console.log(`[Session ${sessionId}]: Finished, cleaned up`);
                   }
                 }
               } catch (error: any) {
-                // If there's an error (likely WebSocket closed), stop the interval
-                if (error.message && error.message.includes('WebSocket not connected')) {
-                  clearInterval(endInterval);
+                if (error.message?.includes('WebSocket not connected')) {
                   this.stopScrolling(sessionId);
                   this.userTeleprompterManagers.delete(userId);
-                  console.log(`[Session ${sessionId}]: WebSocket connection closed, stopping end message updates and cleaned up teleprompter manager for user ${userId}`);
                 }
               }
-            }, 500); // Update every 500ms
+            }, 500);
           }
         } catch (error: any) {
-          // If there's an error (likely WebSocket closed), stop the interval
-          if (error.message && error.message.includes('WebSocket not connected')) {
-            clearInterval(scrollInterval);
-            console.log(`[Session ${sessionId}]: WebSocket connection closed, stopping scrolling`);
+          if (error.message?.includes('WebSocket not connected')) {
+            console.log(`[Session ${sessionId}]: WebSocket closed, stopping`);
+            this.stopScrolling(sessionId);
           }
         }
       }, teleprompterManager.getScrollInterval());
-
-      // Store the interval
-      this.sessionScrollers.set(sessionId, scrollInterval);
-    }, 5000); // 5 second delay
-
-    // Store the timeout so it can be cleared if needed
-    this.sessionScrollers.set(sessionId, delayTimeout);
+    }, 5000);
   }
 
   /**
-   * Stops scrolling for a session
+   * Stops all timers for a session and cleans up
    */
   private stopScrolling(sessionId: string): void {
-    const interval = this.sessionScrollers.get(sessionId);
-    if (interval) {
-      clearInterval(interval);
-      this.sessionScrollers.delete(sessionId);
-      console.log(`[Session ${sessionId}]: Stopped scrolling`);
+    const timers = this.sessionTimers.get(sessionId);
+    if (timers) {
+      // Clear all timers
+      if (timers.initialDisplay) {
+        clearTimeout(timers.initialDisplay);
+      }
+      if (timers.scrollDelay) {
+        clearTimeout(timers.scrollDelay);
+      }
+      if (timers.scrollInterval) {
+        clearInterval(timers.scrollInterval);
+      }
+      if (timers.endInterval) {
+        clearInterval(timers.endInterval);
+      }
+      if (timers.restartDelay) {
+        clearTimeout(timers.restartDelay);
+      }
+      this.sessionTimers.delete(sessionId);
+      console.log(`[Session ${sessionId}]: Stopped all timers`);
     }
+  }
+
+  /**
+   * Check if a session is active (has timers registered)
+   */
+  private isSessionActive(sessionId: string): boolean {
+    return this.sessionTimers.has(sessionId);
   }
 }
 
