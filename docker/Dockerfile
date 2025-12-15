@@ -18,3 +18,6 @@ COPY . .
 
 # Expose the port
 EXPOSE 80
+
+# Start the application
+CMD ["bun", "run", "start"]
