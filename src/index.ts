@@ -655,33 +655,61 @@ class TeleprompterManager {
     // More lenient edit distance for words
     if (word1.length <= 7 && word2.length <= 7) {
       const maxDistance = Math.max(1, Math.floor(Math.min(word1.length, word2.length) * 0.3)); // Allow 30% character difference
-      return this.calculateLevenshteinDistance(word1, word2) <= maxDistance;
+      return this.calculateLevenshteinDistance(word1, word2, maxDistance) <= maxDistance;
     }
 
     return false;
   }
 
   /**
-   * Calculate Levenshtein distance between two strings
+   * Calculate Levenshtein distance between two strings with early exit optimization.
+   * Uses two-row optimization to reduce memory from O(n*m) to O(min(n,m)).
+   * @param str1 First string
+   * @param str2 Second string
+   * @param maxDistance Optional maximum distance - returns early if exceeded
    */
-  private calculateLevenshteinDistance(str1: string, str2: string): number {
-    const matrix = Array(str2.length + 1).fill(null).map(() => Array(str1.length + 1).fill(null));
-
-    for (let i = 0; i <= str1.length; i++) matrix[0][i] = i;
-    for (let j = 0; j <= str2.length; j++) matrix[j][0] = j;
-
-    for (let j = 1; j <= str2.length; j++) {
-      for (let i = 1; i <= str1.length; i++) {
-        const substitutionCost = str1[i - 1] === str2[j - 1] ? 0 : 1;
-        matrix[j][i] = Math.min(
-          matrix[j][i - 1] + 1, // deletion
-          matrix[j - 1][i] + 1, // insertion
-          matrix[j - 1][i - 1] + substitutionCost // substitution
-        );
-      }
+  private calculateLevenshteinDistance(str1: string, str2: string, maxDistance?: number): number {
+    // Ensure str1 is the shorter string for memory optimization
+    if (str1.length > str2.length) {
+      [str1, str2] = [str2, str1];
     }
 
-    return matrix[str2.length][str1.length];
+    const len1 = str1.length;
+    const len2 = str2.length;
+
+    // Quick exit for length difference exceeding max distance
+    if (maxDistance !== undefined && Math.abs(len1 - len2) > maxDistance) {
+      return maxDistance + 1;
+    }
+
+    // Use two rows instead of full matrix - O(min(n,m)) memory instead of O(n*m)
+    let prevRow = Array(len1 + 1).fill(0).map((_, i) => i);
+    let currRow = Array(len1 + 1).fill(0);
+
+    for (let j = 1; j <= len2; j++) {
+      currRow[0] = j;
+      let rowMin = currRow[0]; // Track minimum in current row for early exit
+
+      for (let i = 1; i <= len1; i++) {
+        const cost = str1[i - 1] === str2[j - 1] ? 0 : 1;
+        currRow[i] = Math.min(
+          currRow[i - 1] + 1,      // deletion
+          prevRow[i] + 1,          // insertion
+          prevRow[i - 1] + cost    // substitution
+        );
+        rowMin = Math.min(rowMin, currRow[i]);
+      }
+
+      // Early exit if minimum possible distance exceeds threshold
+      if (maxDistance !== undefined && rowMin > maxDistance) {
+        return maxDistance + 1;
+      }
+
+      // Swap rows
+      [prevRow, currRow] = [currRow, prevRow];
+    }
+
+    return prevRow[len1];
   }
 
     /**
