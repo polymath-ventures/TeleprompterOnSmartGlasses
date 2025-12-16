@@ -535,11 +535,11 @@ class TeleprompterManager {
       return -1;
     }
 
-        // Search window - only look forward, never backward
+    // Search window - only look forward, never backward
     const searchStartLine = this.currentLinePosition; // Start from current position, never behind
     const searchEndLine = Math.min(
       linesToSearch.length,
-      this.currentLinePosition + this.numberOfLines + 1 // Much larger lookahead
+      this.currentLinePosition + this.speechLookaheadLines + 1
     );
 
     this.debugLog(`[SEARCH DEBUG] Searching lines ${searchStartLine} to ${searchEndLine} (current: ${this.currentLinePosition})`);
@@ -825,6 +825,13 @@ class TeleprompterManager {
    */
   setDebugLogging(enabled: boolean): void {
     this.debugLogging = enabled;
+  }
+
+  /**
+   * Check if debug logging is enabled
+   */
+  isDebugLoggingEnabled(): boolean {
+    return this.debugLogging;
   }
 
   /**
@@ -1268,7 +1275,9 @@ class TeleprompterApp extends TpaServer {
 
             const speechText = data.text?.trim();
             if (speechText) {
-              console.log(`[Session ${sessionId}]: Processing speech: "${speechText}" (final: ${data.isFinal})`);
+              if (teleprompterManager.isDebugLoggingEnabled()) {
+                console.log(`[Session ${sessionId}]: Processing speech: "${speechText}" (final: ${data.isFinal})`);
+              }
               teleprompterManager.processSpeechInput(speechText, data.isFinal);
             }
           } catch (error) {
