@@ -896,7 +896,7 @@ class TeleprompterApp extends TpaServer {
 
   constructor() {
     if (!MENTRAOS_API_KEY) {
-      throw new Error('AUGMENTOS_API_KEY is not set');
+      throw new Error('MENTRAOS_API_KEY is not set');
     }
 
     super({
