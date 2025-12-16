@@ -14,10 +14,37 @@ import {
   type DisplayMode,
 } from './utils/src/stageDirections';
 
-// Configuration constants
-const PORT = process.env.PORT ? parseInt(process.env.PORT) : 80;
+// =============================================================================
+// Configuration Constants
+// =============================================================================
+
+// Server configuration
+const DEFAULT_PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT) : DEFAULT_PORT;
 const PACKAGE_NAME = process.env.PACKAGE_NAME;
 const MENTRAOS_API_KEY = process.env.MENTRAOS_API_KEY || process.env.AUGMENTOS_API_KEY;
+
+// Teleprompter display defaults
+const DEFAULT_LINE_WIDTH = 38;
+const DEFAULT_SCROLL_SPEED_WPM = 120;
+const DEFAULT_NUMBER_OF_LINES = 4;
+const MAX_SCROLL_SPEED_WPM = 500;
+const MIN_SCROLL_SPEED_WPM = 1;
+
+// Timing constants (in milliseconds)
+const SCROLL_INTERVAL_MS = 500;           // Update display twice per second
+const INITIAL_DISPLAY_DELAY_MS = 1000;    // Delay before showing initial text
+const SCROLL_START_DELAY_MS = 5000;       // Delay before scrolling begins
+const FINAL_LINE_DISPLAY_MS = 5000;       // How long to show final line
+const END_MESSAGE_DISPLAY_MS = 10000;     // How long to show "END OF TEXT"
+const AUTO_REPLAY_DELAY_MS = 5000;        // Delay before auto-replay
+const DISPLAY_TIMEOUT_MS = 10000;         // SDK display timeout
+
+// Speech matching configuration
+const SPEECH_BUFFER_SIZE_FINAL = 20;      // Buffer size for final transcriptions
+const SPEECH_BUFFER_SIZE_INTERIM = 10;    // Buffer size for interim transcriptions
+const SPEECH_MAX_ADVANCE_LINES = 10;      // Max lines to advance from speech match
+const SPEECH_LOOKAHEAD_LINES = 4;         // Lines ahead to search for matches
 
 // TeleprompterManager class to handle teleprompter functionality
 class TeleprompterManager {
@@ -45,7 +72,7 @@ class TeleprompterManager {
   private speechBuffer: string[] = []; // Buffer of recent speech words
   private speechScrollEnabled: boolean = true; // Enable/disable speech-based scrolling
   private lastSpeechPosition: number = -1; // Last detected position from speech
-  private speechLookaheadLines: number = 4; // How many lines ahead to search for speech matches (increased)
+  private speechLookaheadLines: number = SPEECH_LOOKAHEAD_LINES;
   private minWordsForMatch: number = 3; // Minimum words needed for a reliable match (reduced to 1)
   private lineOffset: number = 0; // Offset the line position by 1 to show the match on the 2nd line
 
@@ -55,12 +82,12 @@ class TeleprompterManager {
   private textForSpeechMatching: string = ''; // Text with stage directions stripped for speech matching
   private linesForSpeechMatching: string[] = []; // Lines with stage directions stripped
 
-  constructor(text: string, lineWidth: number = 38, scrollSpeed: number = 120, autoReplay: boolean = false, speechScrollEnabled: boolean = true, showEstimatedTotal: boolean = true) {
+  constructor(text: string, lineWidth: number = DEFAULT_LINE_WIDTH, scrollSpeed: number = DEFAULT_SCROLL_SPEED_WPM, autoReplay: boolean = false, speechScrollEnabled: boolean = true, showEstimatedTotal: boolean = true) {
     this.text = text || this.getDefaultText();
     this.lineWidth = lineWidth;
-    this.numberOfLines = 4;
+    this.numberOfLines = DEFAULT_NUMBER_OF_LINES;
     this.scrollSpeed = scrollSpeed;
-    this.scrollInterval = 500; // Update twice per second for smoother scrolling
+    this.scrollInterval = SCROLL_INTERVAL_MS;
     this.autoReplay = autoReplay;
     this.speechScrollEnabled = speechScrollEnabled;
     this.showEstimatedTotal = showEstimatedTotal;
@@ -191,8 +218,8 @@ class TeleprompterManager {
 
   setScrollSpeed(wordsPerMinute: number): void {
     // Ensure scroll speed is within reasonable bounds
-    if (wordsPerMinute < 1) wordsPerMinute = 1;
-    if (wordsPerMinute > 500) wordsPerMinute = 500;
+    if (wordsPerMinute < MIN_SCROLL_SPEED_WPM) wordsPerMinute = MIN_SCROLL_SPEED_WPM;
+    if (wordsPerMinute > MAX_SCROLL_SPEED_WPM) wordsPerMinute = MAX_SCROLL_SPEED_WPM;
 
     this.scrollSpeed = wordsPerMinute;
     this.calculateWordsPerInterval();
@@ -258,7 +285,7 @@ class TeleprompterManager {
       this.replayTimeout = setTimeout(() => {
         this.resetPosition();
         this.replayTimeout = null;
-      }, 5000); // 5 second delay before replay
+      }, AUTO_REPLAY_DELAY_MS);
     }
   }
 
@@ -350,7 +377,7 @@ class TeleprompterManager {
       // If we're showing the final line, check if it's been 5 seconds
       if (this.showingFinalLine && this.finalLineTimestamp) {
         const timeAtFinalLine = Date.now() - this.finalLineTimestamp;
-        if (timeAtFinalLine < 5000) { // Show final line for 5 seconds
+        if (timeAtFinalLine < FINAL_LINE_DISPLAY_MS) {
           return `${progressText}\n${visibleLines.join('\n')}`;
         } else {
           // After 5 seconds, switch to showing END OF TEXT
@@ -360,13 +387,13 @@ class TeleprompterManager {
         }
       }
 
-      // If we're showing the end message, check if it's been 10 seconds
+      // If we're showing the end message, check if time has elapsed
       if (this.showingEndMessage && this.endTimestamp) {
         const timeAtEnd = Date.now() - this.endTimestamp;
-        if (timeAtEnd < 10000) { // Show END OF TEXT for 10 seconds
+        if (timeAtEnd < END_MESSAGE_DISPLAY_MS) {
           return `${progressText}\n\n*** END OF TEXT ***`;
         } else {
-          // After 10 seconds, just reset the flags
+          // After display time, just reset the flags
           // The actual restart will be handled by the scrolling logic
           this.showingEndMessage = false;
           this.endTimestamp = null;
@@ -438,10 +465,10 @@ class TeleprompterManager {
     // Update speech buffer with appropriate size based on result type
     if (isFinal) {
       // For final results, keep more context in the buffer
-      this.speechBuffer = [...this.speechBuffer, ...words].slice(-20);
+      this.speechBuffer = [...this.speechBuffer, ...words].slice(-SPEECH_BUFFER_SIZE_FINAL);
     } else {
       // For interim results, use a smaller buffer for more responsive matching
-      this.speechBuffer = [...this.speechBuffer, ...words].slice(-10);
+      this.speechBuffer = [...this.speechBuffer, ...words].slice(-SPEECH_BUFFER_SIZE_INTERIM);
     }
 
     console.log(`[SPEECH DEBUG] Buffer (${this.speechBuffer.length} words): "${this.speechBuffer.join(' ')}" | Current line: ${this.currentLinePosition}`);
@@ -460,7 +487,7 @@ class TeleprompterManager {
       // Only advance forward - never go backward
       if (matchPosition > this.currentLinePosition) {
         // Calculate how far to advance - be more aggressive but only forward
-        const maxAdvance = Math.min(matchPosition, this.currentLinePosition + 10); // Increased from 5 to 10
+        const maxAdvance = Math.min(matchPosition, this.currentLinePosition + SPEECH_MAX_ADVANCE_LINES);
 
         // Add slight forward bias to help keep up with speech
         const biasedPosition = Math.max(maxAdvance, this.currentLinePosition);
@@ -925,7 +952,7 @@ class TeleprompterApp extends TpaServer {
     } catch (error) {
       console.error('Error initializing session:', error);
       // Create default teleprompter manager if there was an error
-      const teleprompterManager = new TeleprompterManager('', 38, 120);
+      const teleprompterManager = new TeleprompterManager('', DEFAULT_LINE_WIDTH, DEFAULT_SCROLL_SPEED_WPM);
       this.userTeleprompterManagers.set(userId, teleprompterManager);
 
       // Start scrolling (this registers the session and shows initial text)
@@ -1008,8 +1035,8 @@ class TeleprompterApp extends TpaServer {
     try {
       // Extract settings from the session
       const lineWidthString = session.settings.get<string>('line_width', "Medium");
-      const scrollSpeed = session.settings.get<number>('scroll_speed', 120);
-      const numberOfLines = parseInt(session.settings.get<string>('number_of_lines', "4"));
+      const scrollSpeed = session.settings.get<number>('scroll_speed', DEFAULT_SCROLL_SPEED_WPM);
+      const numberOfLines = parseInt(session.settings.get<string>('number_of_lines', String(DEFAULT_NUMBER_OF_LINES)));
       const customText = session.settings.get<string>('custom_text', '');
       const autoReplay = session.settings.get<boolean>('auto_replay', false);
       const speechScrollEnabled = session.settings.get<boolean>('speech_scroll_enabled', true);
@@ -1120,7 +1147,7 @@ class TeleprompterApp extends TpaServer {
       // Use the SDK's layout API to display the text
       session.layouts.showTextWall(text, {
         view: ViewType.MAIN,
-        durationMs: 10 * 1000 // 10 seconds timeout in case updates stop
+        durationMs: DISPLAY_TIMEOUT_MS
       });
     } catch (error: any) {
       // Check if this is a WebSocket connection error
@@ -1199,9 +1226,9 @@ class TeleprompterApp extends TpaServer {
       if (!this.isSessionActive(sessionId)) return;
       console.log(`[Session ${sessionId}]: Showing initial text`);
       this.showTextToUser(session, sessionId, teleprompterManager.getCurrentVisibleText());
-    }, 1000);
+    }, INITIAL_DISPLAY_DELAY_MS);
 
-    // Start scrolling after 5 second delay
+    // Start scrolling after delay
     timers.scrollDelay = setTimeout(() => {
       if (!this.isSessionActive(sessionId)) return;
 
@@ -1259,7 +1286,7 @@ class TeleprompterApp extends TpaServer {
                       // Clean up and restart
                       this.sessionTimers.delete(sessionId);
                       this.startScrolling(session, sessionId, userId);
-                    }, 5000);
+                    }, AUTO_REPLAY_DELAY_MS);
                   } else {
                     // Stop everything
                     this.stopScrolling(sessionId);
@@ -1273,7 +1300,7 @@ class TeleprompterApp extends TpaServer {
                   this.userTeleprompterManagers.delete(userId);
                 }
               }
-            }, 500);
+            }, SCROLL_INTERVAL_MS);
           }
         } catch (error: any) {
           if (error.message?.includes('WebSocket not connected')) {
@@ -1282,7 +1309,7 @@ class TeleprompterApp extends TpaServer {
           }
         }
       }, teleprompterManager.getScrollInterval());
-    }, 5000);
+    }, SCROLL_START_DELAY_MS);
   }
 
   /**
