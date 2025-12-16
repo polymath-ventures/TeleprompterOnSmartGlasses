@@ -435,14 +435,13 @@ class TeleprompterManager {
       return;
     }
 
-    // Update speech buffer - keep last 20 words for context (increased)
+    // Update speech buffer with appropriate size based on result type
     if (isFinal) {
-      // For final results, replace the buffer content more aggressively
+      // For final results, keep more context in the buffer
       this.speechBuffer = [...this.speechBuffer, ...words].slice(-20);
     } else {
-      // For interim results, be more aggressive - update more frequently
-      const bufferWithoutInterim = this.speechBuffer; // Remove last 3 words that might be interim (reduced)
-      this.speechBuffer = [...bufferWithoutInterim, ...words].slice(-10);
+      // For interim results, use a smaller buffer for more responsive matching
+      this.speechBuffer = [...this.speechBuffer, ...words].slice(-10);
     }
 
     console.log(`[SPEECH DEBUG] Buffer (${this.speechBuffer.length} words): "${this.speechBuffer.join(' ')}" | Current line: ${this.currentLinePosition}`);
