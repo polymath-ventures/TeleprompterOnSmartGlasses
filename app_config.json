@@ -128,6 +128,18 @@
                     "value": "hidden"
                 }
             ]
+        },
+        {
+            "type": "group",
+            "key": "",
+            "label": "",
+            "title": "Advanced"
+        },
+        {
+            "type": "toggle",
+            "key": "debug_logging",
+            "label": "Debug Logging",
+            "defaultValue": false
         }
     ]
 }

@@ -82,6 +82,9 @@ class TeleprompterManager {
   private textForSpeechMatching: string = ''; // Text with stage directions stripped for speech matching
   private linesForSpeechMatching: string[] = []; // Lines with stage directions stripped
 
+  // Debug logging
+  private debugLogging: boolean = false; // Enable verbose debug logging
+
   constructor(text: string, lineWidth: number = DEFAULT_LINE_WIDTH, scrollSpeed: number = DEFAULT_SCROLL_SPEED_WPM, autoReplay: boolean = false, speechScrollEnabled: boolean = true, showEstimatedTotal: boolean = true) {
     this.text = text || this.getDefaultText();
     this.lineWidth = lineWidth;
@@ -471,7 +474,7 @@ class TeleprompterManager {
       this.speechBuffer = [...this.speechBuffer, ...words].slice(-SPEECH_BUFFER_SIZE_INTERIM);
     }
 
-    console.log(`[SPEECH DEBUG] Buffer (${this.speechBuffer.length} words): "${this.speechBuffer.join(' ')}" | Current line: ${this.currentLinePosition}`);
+    this.debugLog(`[SPEECH DEBUG] Buffer (${this.speechBuffer.length} words): "${this.speechBuffer.join(' ')}" | Current line: ${this.currentLinePosition}`);
 
     // Only try to match if we have enough words
     if (this.speechBuffer.length < this.minWordsForMatch) {
@@ -482,7 +485,7 @@ class TeleprompterManager {
     const matchPosition = this.findSpeechMatchPosition();
 
     if (matchPosition !== -1) {
-      console.log(`[SPEECH MATCH] Found at line ${matchPosition}, current position: ${this.currentLinePosition}`);
+      this.debugLog(`[SPEECH MATCH] Found at line ${matchPosition}, current position: ${this.currentLinePosition}`);
 
       // Only advance forward - never go backward
       if (matchPosition > this.currentLinePosition) {
@@ -508,12 +511,12 @@ class TeleprompterManager {
         }
         this.lastSpeechPosition = matchPosition;
 
-        console.log(`[SPEECH ADVANCE] Moved forward to line ${this.currentLinePosition} (was ${previousPosition}) to show speech match at line ${matchPosition} on 2nd display line`);
+        this.debugLog(`[SPEECH ADVANCE] Moved forward to line ${this.currentLinePosition} (was ${previousPosition}) to show speech match at line ${matchPosition} on 2nd display line`);
       } else {
-        console.log(`[SPEECH NO_ADVANCE] Match at line ${matchPosition} is not ahead of current position ${this.currentLinePosition}, staying put`);
+        this.debugLog(`[SPEECH NO_ADVANCE] Match at line ${matchPosition} is not ahead of current position ${this.currentLinePosition}, staying put`);
       }
     } else {
-      console.log(`[SPEECH NO_MATCH] No match found for buffer: "${this.speechBuffer.slice(-5).join(' ')}" | Searching from line ${this.currentLinePosition}`);
+      this.debugLog(`[SPEECH NO_MATCH] No match found for buffer: "${this.speechBuffer.slice(-5).join(' ')}" | Searching from line ${this.currentLinePosition}`);
     }
   }
 
@@ -539,7 +542,7 @@ class TeleprompterManager {
       this.currentLinePosition + this.numberOfLines + 1 // Much larger lookahead
     );
 
-    console.log(`[SEARCH DEBUG] Searching lines ${searchStartLine} to ${searchEndLine} (current: ${this.currentLinePosition})`);
+    this.debugLog(`[SEARCH DEBUG] Searching lines ${searchStartLine} to ${searchEndLine} (current: ${this.currentLinePosition})`);
 
     const searchLines = linesToSearch.slice(searchStartLine, searchEndLine);
     // Filter out empty lines from search text
@@ -552,29 +555,29 @@ class TeleprompterManager {
       .trim();
 
     if (!searchText) {
-      console.log(`[SEARCH DEBUG] No search text found in range`);
+      this.debugLog(`[SEARCH DEBUG] No search text found in range`);
       return -1;
     }
 
     const searchWords = searchText.split(' ').filter(w => w.length > 0);
-    console.log(`[SEARCH DEBUG] Search text (${searchWords.length} words): "${searchText.substring(0, 100)}..."`);
+    this.debugLog(`[SEARCH DEBUG] Search text (${searchWords.length} words): "${searchText.substring(0, 100)}..."`);
 
     // Try different speech buffer lengths (from shorter to longer for better responsiveness)
     for (let bufferLen = Math.min(this.speechBuffer.length, 5); bufferLen >= this.minWordsForMatch; bufferLen--) {
       const speechPhrase = this.speechBuffer.slice(-bufferLen).join(' ');
-      console.log(`[MATCH DEBUG] Trying phrase (${bufferLen} words): "${speechPhrase}"`);
+      this.debugLog(`[MATCH DEBUG] Trying phrase (${bufferLen} words): "${speechPhrase}"`);
 
       // Try exact match first
       const exactMatch = this.findExactMatch(speechPhrase, searchWords, searchStartLine);
       if (exactMatch !== -1) {
-        console.log(`[MATCH SUCCESS] Exact match found: "${speechPhrase}" at line ${exactMatch}`);
+        this.debugLog(`[MATCH SUCCESS] Exact match found: "${speechPhrase}" at line ${exactMatch}`);
         return exactMatch;
       }
 
       // Try fuzzy match next
       const fuzzyMatch = this.findFuzzyMatch(speechPhrase, searchWords, searchStartLine);
       if (fuzzyMatch !== -1) {
-        console.log(`[MATCH SUCCESS] Fuzzy match found: "${speechPhrase}" at line ${fuzzyMatch}`);
+        this.debugLog(`[MATCH SUCCESS] Fuzzy match found: "${speechPhrase}" at line ${fuzzyMatch}`);
         return fuzzyMatch;
       }
     }
@@ -626,7 +629,7 @@ class TeleprompterManager {
 
         if (matchCount >= minMatchWords) {
           const linePosition = this.estimateLineFromWordPosition(i, searchStartLine);
-          console.log(`[FUZZY SUCCESS] Match of ${matchCount} words at word position ${i}, estimated line ${linePosition} for phrase "${speechPhrase}"`);
+          this.debugLog(`[FUZZY SUCCESS] Match of ${matchCount} words at word position ${i}, estimated line ${linePosition} for phrase "${speechPhrase}"`);
           return linePosition;
         }
       }
@@ -734,7 +737,7 @@ class TeleprompterManager {
         .filter(w => w.length > 0).length : 0;
 
       if (wordCount + lineWords > wordPosition) {
-        console.log(`[POSITION DEBUG] Word position ${wordPosition} maps to line ${lineIdx} (accumulated ${wordCount} words)`);
+        this.debugLog(`[POSITION DEBUG] Word position ${wordPosition} maps to line ${lineIdx} (accumulated ${wordCount} words)`);
         return lineIdx;
       }
 
@@ -744,7 +747,7 @@ class TeleprompterManager {
     // Fallback to original calculation
     const estimatedLinesFromStart = Math.floor(wordPosition / this.avgWordsPerLine);
     const result = Math.max(0, searchStartLine + estimatedLinesFromStart);
-    console.log(`[POSITION DEBUG] Fallback estimation: word ${wordPosition} -> line ${result}`);
+    this.debugLog(`[POSITION DEBUG] Fallback estimation: word ${wordPosition} -> line ${result}`);
     return result;
   }
 
@@ -815,6 +818,22 @@ class TeleprompterManager {
    */
   getStageDirectionDisplay(): DisplayMode {
     return this.stageDirectionDisplay;
+  }
+
+  /**
+   * Set whether debug logging is enabled
+   */
+  setDebugLogging(enabled: boolean): void {
+    this.debugLogging = enabled;
+  }
+
+  /**
+   * Log a debug message if debug logging is enabled
+   */
+  private debugLog(message: string): void {
+    if (this.debugLogging) {
+      console.log(message);
+    }
   }
 
   /**
@@ -913,7 +932,7 @@ class TeleprompterManager {
       }
 
       if (hasSpeakable) {
-        console.log(`[AUTO-ADVANCE] Advancing from line ${this.currentLinePosition} to ${nextPosition} (skipping stage direction-only content)`);
+        this.debugLog(`[AUTO-ADVANCE] Advancing from line ${this.currentLinePosition} to ${nextPosition} (skipping stage direction-only content)`);
         this.currentLinePosition = nextPosition;
         this.linePositionAccumulator = 0;
         return true;
@@ -923,7 +942,7 @@ class TeleprompterManager {
     }
 
     // Reached end of text with no more speakable content
-    console.log(`[AUTO-ADVANCE] Reached end of speakable content at line ${this.currentLinePosition}`);
+    this.debugLog(`[AUTO-ADVANCE] Reached end of speakable content at line ${this.currentLinePosition}`);
     return false;
   }
 }
@@ -1052,6 +1071,12 @@ class TeleprompterApp extends TpaServer {
       console.log(`Stage direction display changed for user ${userId}: ${oldValue} -> ${newValue}`);
       this.applySettings(session, sessionId, userId);
     });
+
+    // Handle debug logging changes
+    session.settings.onValueChange('debug_logging', (newValue, oldValue) => {
+      console.log(`Debug logging changed for user ${userId}: ${oldValue} -> ${newValue}`);
+      this.applySettings(session, sessionId, userId);
+    });
   }
 
   /**
@@ -1073,6 +1098,7 @@ class TeleprompterApp extends TpaServer {
       const showEstimatedTotal = session.settings.get<boolean>('show_estimated_total', true);
       const stageDirectionDelimiter = session.settings.get<string>('stage_direction_delimiter', 'none') as DelimiterType;
       const stageDirectionDisplay = session.settings.get<string>('stage_direction_display', 'dimmed') as DisplayMode;
+      const debugLogging = session.settings.get<boolean>('debug_logging', false);
 
       const lineWidth = convertLineWidth(lineWidthString, false);
 
@@ -1087,6 +1113,9 @@ class TeleprompterApp extends TpaServer {
       if (!teleprompterManager) {
         teleprompterManager = new TeleprompterManager(newTextToSet, lineWidth, scrollSpeed, autoReplay, speechScrollEnabled, showEstimatedTotal);
         teleprompterManager.setNumberOfLines(numberOfLines);
+        teleprompterManager.setStageDirectionDelimiter(stageDirectionDelimiter);
+        teleprompterManager.setStageDirectionDisplay(stageDirectionDisplay);
+        teleprompterManager.setDebugLogging(debugLogging);
         this.userTeleprompterManagers.set(userId, teleprompterManager);
         textChanged = true; // Always reset on first creation
       } else {
@@ -1103,6 +1132,7 @@ class TeleprompterApp extends TpaServer {
         teleprompterManager.setShowEstimatedTotal(showEstimatedTotal);
         teleprompterManager.setStageDirectionDelimiter(stageDirectionDelimiter);
         teleprompterManager.setStageDirectionDisplay(stageDirectionDisplay);
+        teleprompterManager.setDebugLogging(debugLogging);
       }
 
       console.log(`Text changed: ${textChanged}`);
