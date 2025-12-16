@@ -968,6 +968,7 @@ class TeleprompterApp extends TpaServer {
   // Maps to track user teleprompter managers and active session timers
   private userTeleprompterManagers = new Map<string, TeleprompterManager>();
   private sessionTimers = new Map<string, SessionTimers>();
+  private userSessions = new Map<string, Set<string>>(); // userId -> Set of sessionIds
 
   constructor() {
     if (!MENTRAOS_API_KEY) {
@@ -987,6 +988,12 @@ class TeleprompterApp extends TpaServer {
    */
   protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {
     console.log(`\n\n📜📜📜 Received teleprompter session request for user ${userId}, session ${sessionId}\n\n`);
+
+    // Track this session for the user
+    if (!this.userSessions.has(userId)) {
+      this.userSessions.set(userId, new Set());
+    }
+    this.userSessions.get(userId)!.add(sessionId);
 
     try {
       // Set up settings change handlers
@@ -1156,30 +1163,26 @@ class TeleprompterApp extends TpaServer {
     // Stop all timers for this session (this also removes from sessionTimers map)
     this.stopScrolling(sessionId);
 
-    // Clean up teleprompter manager if this was the last session for this user
-    let hasOtherSessions = false;
+    // Remove this session from user's session set
+    const userSessionSet = this.userSessions.get(userId);
+    if (userSessionSet) {
+      userSessionSet.delete(sessionId);
 
-    try {
-      // Check if there are other active sessions for this user
-      for (const [activeSessionId] of this.sessionTimers.entries()) {
-        if (activeSessionId !== sessionId && activeSessionId.includes(userId)) {
-          hasOtherSessions = true;
-          break;
+      // If no other sessions for this user, clean up the teleprompter manager
+      if (userSessionSet.size === 0) {
+        this.userSessions.delete(userId);
+        try {
+          const teleprompterManager = this.userTeleprompterManagers.get(userId);
+          if (teleprompterManager) {
+            teleprompterManager.clear();
+            teleprompterManager.resetPosition();
+            this.userTeleprompterManagers.delete(userId);
+            console.log(`[User ${userId}]: All sessions closed, teleprompter manager destroyed`);
+          }
+        } catch (e) {
+          console.error('Error cleaning up session:', e);
         }
       }
-
-      // If no other sessions, clean up the teleprompter manager
-      if (!hasOtherSessions) {
-        const teleprompterManager = this.userTeleprompterManagers.get(userId);
-        if (teleprompterManager) {
-          teleprompterManager.clear();
-          teleprompterManager.resetPosition();
-          this.userTeleprompterManagers.delete(userId);
-          console.log(`[User ${userId}]: All sessions closed, teleprompter manager destroyed`);
-        }
-      }
-    } catch (e) {
-      console.error('Error cleaning up session:', e);
     }
   }
 
