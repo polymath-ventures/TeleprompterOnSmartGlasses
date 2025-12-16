@@ -1,5 +1,4 @@
 // augmentos_cloud/packages/apps/teleprompter/src/index.ts
-import express from 'express';
 import path from 'path';
 import {
   TpaServer,
