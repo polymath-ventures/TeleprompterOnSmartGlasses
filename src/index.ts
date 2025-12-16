@@ -901,7 +901,8 @@ class TeleprompterManager {
 }
 
 /**
- * Tracks all timers for a session to prevent orphaned timers and race conditions
+ * Tracks all timers and cleanup functions for a session to prevent orphaned
+ * timers, event handlers, and race conditions
  */
 interface SessionTimers {
   initialDisplay?: NodeJS.Timeout;  // 1-second initial display timeout
@@ -909,6 +910,7 @@ interface SessionTimers {
   scrollInterval?: NodeJS.Timeout;  // Main scroll interval
   endInterval?: NodeJS.Timeout;     // End-of-text display interval
   restartDelay?: NodeJS.Timeout;    // Auto-replay restart delay
+  transcriptionUnsubscribe?: () => void;  // Function to unsubscribe from transcription events
 }
 
 /**
@@ -1196,7 +1198,8 @@ class TeleprompterApp extends TpaServer {
       try {
         console.log(`[Session ${sessionId}]: Setting up SPEECH-BASED scrolling for user ${userId}`);
 
-        const transcriptionUnsubscribe = session.events.onTranscription((data) => {
+        // Store unsubscribe function in session timers so it gets cleaned up with the session
+        timers.transcriptionUnsubscribe = session.events.onTranscription((data) => {
           try {
             if (!this.isSessionActive(sessionId)) {
               return;
@@ -1212,7 +1215,6 @@ class TeleprompterApp extends TpaServer {
           }
         });
 
-        this.addCleanupHandler(transcriptionUnsubscribe);
         console.log(`[Session ${sessionId}]: Speech transcription listener set up`);
       } catch (error) {
         console.error(`[Session ${sessionId}]: Failed to set up speech transcription:`, error);
@@ -1313,7 +1315,7 @@ class TeleprompterApp extends TpaServer {
   }
 
   /**
-   * Stops all timers for a session and cleans up
+   * Stops all timers for a session and cleans up event handlers
    */
   private stopScrolling(sessionId: string): void {
     const timers = this.sessionTimers.get(sessionId);
@@ -1334,8 +1336,12 @@ class TeleprompterApp extends TpaServer {
       if (timers.restartDelay) {
         clearTimeout(timers.restartDelay);
       }
+      // Unsubscribe from transcription events to prevent handler accumulation
+      if (timers.transcriptionUnsubscribe) {
+        timers.transcriptionUnsubscribe();
+      }
       this.sessionTimers.delete(sessionId);
-      console.log(`[Session ${sessionId}]: Stopped all timers`);
+      console.log(`[Session ${sessionId}]: Stopped all timers and unsubscribed from events`);
     }
   }
 
