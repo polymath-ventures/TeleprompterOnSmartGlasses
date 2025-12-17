@@ -298,8 +298,8 @@ export class TranscriptProcessor {
     // Group lines into segments
     const segments: string[] = [];
     for (let i = 0; i < allLines.length; i += segmentLines) {
-      const segmentLines = allLines.slice(i, i + this.maxLines);
-      segments.push(segmentLines.join('\n'));
+      const segmentSlice = allLines.slice(i, i + segmentLines);
+      segments.push(segmentSlice.join('\n'));
     }
 
     return segments;
