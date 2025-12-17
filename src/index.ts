@@ -73,7 +73,7 @@ class TeleprompterManager {
   private speechScrollEnabled: boolean = true; // Enable/disable speech-based scrolling
   private lastSpeechPosition: number = -1; // Last detected position from speech
   private speechLookaheadLines: number = SPEECH_LOOKAHEAD_LINES;
-  private minWordsForMatch: number = 3; // Minimum words needed for a reliable match (reduced to 1)
+  private minWordsForMatch: number = 3; // Minimum words needed for a reliable match
   private lineOffset: number = 0; // Offset the line position by 1 to show the match on the 2nd line
 
   // Stage direction properties
@@ -607,7 +607,8 @@ class TeleprompterManager {
    */
   private findFuzzyMatch(speechPhrase: string, searchWords: string[], searchStartLine: number): number {
     const speechWords = speechPhrase.split(' ');
-    const minMatchWords = Math.max(this.minWordsForMatch, speechWords.length); // Very aggressive - require only 30% word match
+    // Require ~60% of words to match for fuzzy matching
+    const minMatchWords = Math.max(this.minWordsForMatch, Math.ceil(speechWords.length * 0.6));
 
     // Try multiple sliding window sizes to handle speech recognition variability
     const windowSizes = [speechWords.length, speechWords.length + 1, speechWords.length - 1].filter(s => s > 0);
@@ -1062,10 +1063,11 @@ class TeleprompterApp extends TpaServer {
       this.applySettings(session, sessionId, userId);
     });
 
-    // Handle speech scroll enabled changes
+    // Handle speech scroll enabled changes - need to rewire transcription listener
     session.settings.onValueChange('speech_scroll_enabled', (newValue, oldValue) => {
       console.log(`Speech scroll enabled changed for user ${userId}: ${oldValue} -> ${newValue}`);
       this.applySettings(session, sessionId, userId);
+      this.updateTranscriptionSubscription(session, sessionId, userId, newValue as boolean);
     });
 
     // Handle show estimated total changes
@@ -1420,6 +1422,53 @@ class TeleprompterApp extends TpaServer {
    */
   private isSessionActive(sessionId: string): boolean {
     return this.sessionTimers.has(sessionId);
+  }
+
+  /**
+   * Update transcription subscription when speech scroll setting changes mid-session
+   */
+  private updateTranscriptionSubscription(
+    session: TpaSession,
+    sessionId: string,
+    userId: string,
+    enabled: boolean
+  ): void {
+    const timers = this.sessionTimers.get(sessionId);
+    if (!timers) {
+      return; // Session not active
+    }
+
+    const teleprompterManager = this.userTeleprompterManagers.get(userId);
+    if (!teleprompterManager) {
+      return;
+    }
+
+    if (enabled && !timers.transcriptionUnsubscribe) {
+      // Subscribe to transcription events
+      console.log(`[Session ${sessionId}]: Enabling speech-based scrolling mid-session`);
+      timers.transcriptionUnsubscribe = session.events.onTranscription((data) => {
+        try {
+          if (!this.isSessionActive(sessionId)) {
+            return;
+          }
+
+          const speechText = data.text?.trim();
+          if (speechText) {
+            if (teleprompterManager.isDebugLoggingEnabled()) {
+              console.log(`[Session ${sessionId}]: Processing speech: "${speechText}" (final: ${data.isFinal})`);
+            }
+            teleprompterManager.processSpeechInput(speechText, data.isFinal);
+          }
+        } catch (error) {
+          console.error(`[Session ${sessionId}]: Error processing speech:`, error);
+        }
+      });
+    } else if (!enabled && timers.transcriptionUnsubscribe) {
+      // Unsubscribe from transcription events
+      console.log(`[Session ${sessionId}]: Disabling speech-based scrolling mid-session`);
+      timers.transcriptionUnsubscribe();
+      timers.transcriptionUnsubscribe = undefined;
+    }
   }
 }
 
