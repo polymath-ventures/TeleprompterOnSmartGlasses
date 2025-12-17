@@ -142,6 +142,147 @@ Let's begin with the first topic.`);
     });
   });
 
+  describe('Unclosed delimiter edge cases', () => {
+    test('unclosed bracket at start strips everything after it', () => {
+      const script = '[Unclosed stage direction that goes on and on';
+      const stripped = stripStageDirections(script, 'square');
+      expect(stripped).toBe('');
+
+      const dimmed = transformStageDirectionsForDisplay(script, 'square', 'dimmed');
+      // Dimmed mode completes the parenthesis for proper display
+      expect(dimmed).toBe('(Unclosed stage direction that goes on and on)');
+
+      const hidden = transformStageDirectionsForDisplay(script, 'square', 'hidden');
+      expect(hidden).toBe('');
+    });
+
+    test('unclosed bracket in middle strips from bracket to end', () => {
+      const script = 'This is normal text [but this bracket never closes and keeps going';
+      const stripped = stripStageDirections(script, 'square');
+      expect(stripped).toBe('This is normal text ');
+
+      const dimmed = transformStageDirectionsForDisplay(script, 'square', 'dimmed');
+      // Dimmed mode completes the parenthesis for proper display
+      expect(dimmed).toBe('This is normal text (but this bracket never closes and keeps going)');
+
+      const hidden = transformStageDirectionsForDisplay(script, 'square', 'hidden');
+      expect(hidden).toBe('This is normal text ');
+    });
+
+    test('unclosed bracket spanning large multi-line section', () => {
+      const script = `First paragraph of normal text.
+
+[Stage direction that starts here
+and continues for many lines
+with various content
+including more text
+and even more content
+that never gets closed
+
+This would all be considered part of the stage direction
+since there is no closing bracket.`;
+
+      const stripped = stripStageDirections(script, 'square');
+      // Only the first paragraph should remain
+      expect(stripped).toBe(`First paragraph of normal text.
+
+`);
+      expect(stripped).not.toContain('Stage direction');
+      expect(stripped).not.toContain('never gets closed');
+
+      const hidden = transformStageDirectionsForDisplay(script, 'square', 'hidden');
+      expect(hidden).toBe(`First paragraph of normal text.
+
+`);
+    });
+
+    test('multiple unclosed brackets - each consumes to next open or end', () => {
+      // The first [ consumes until the next [ is found (since no ] exists between)
+      // Actually, the algorithm uses depth tracking, so it just goes to end
+      const script = 'Text [unclosed one [unclosed two';
+      const stripped = stripStageDirections(script, 'square');
+      // First [ opens, second [ increases depth to 2, no closes, so entire rest is stripped
+      expect(stripped).toBe('Text ');
+    });
+
+    test('unclosed bracket with closing brackets after (nested scenario)', () => {
+      // [outer [inner] - the inner ] closes inner, but outer remains unclosed
+      const script = 'Before [outer [inner] after inner but outer unclosed';
+      const stripped = stripStageDirections(script, 'square');
+      // [outer opens (depth 1), [inner opens (depth 2), ] closes inner (depth 1)
+      // then continues to end since no more ] to close outer
+      expect(stripped).toBe('Before ');
+    });
+
+    test('unclosed parentheses behave the same way', () => {
+      const script = 'Normal text (unclosed parens that continue';
+      const stripped = stripStageDirections(script, 'round');
+      expect(stripped).toBe('Normal text ');
+
+      const dimmed = transformStageDirectionsForDisplay(script, 'round', 'dimmed');
+      // Round uses () for dimmed, but the content already has ( so it becomes ((
+      // Actually, transform converts the ( to ( and keeps content, no closing )
+      expect(dimmed).toBe('Normal text (unclosed parens that continue');
+    });
+
+    test('unclosed curly braces behave the same way', () => {
+      const script = 'Normal text {unclosed curly that continue';
+      const stripped = stripStageDirections(script, 'curly');
+      expect(stripped).toBe('Normal text ');
+
+      const hidden = transformStageDirectionsForDisplay(script, 'curly', 'hidden');
+      expect(hidden).toBe('Normal text ');
+    });
+
+    test('extra closing brackets are preserved (not stage directions)', () => {
+      // A closing bracket without opening is just regular text
+      const script = 'Text with extra ] closing bracket';
+      const stripped = stripStageDirections(script, 'square');
+      expect(stripped).toBe('Text with extra ] closing bracket');
+    });
+
+    test('empty unclosed bracket', () => {
+      const script = 'Before [';
+      const stripped = stripStageDirections(script, 'square');
+      expect(stripped).toBe('Before ');
+    });
+
+    test('unclosed bracket followed by valid bracket pair', () => {
+      // First [ is unclosed and consumes everything including the second [valid]
+      const script = 'Start [unclosed middle [valid] end';
+      const stripped = stripStageDirections(script, 'square');
+      // [unclosed opens (depth 1), [valid opens (depth 2), ] closes (depth 1), end of string
+      expect(stripped).toBe('Start ');
+    });
+
+    test('line wrapping with unclosed bracket producing large strip', () => {
+      // Ensure that when hidden mode strips a large section, the remaining text is reasonable
+      const longUnclosedSection = 'A'.repeat(500); // 500 char stage direction
+      const script = `Short intro. [${longUnclosedSection}`;
+
+      const stripped = stripStageDirections(script, 'square');
+      expect(stripped).toBe('Short intro. ');
+      expect(stripped.length).toBeLessThan(20); // Reasonable length for wrapping
+
+      const hidden = transformStageDirectionsForDisplay(script, 'square', 'hidden');
+      expect(hidden).toBe('Short intro. ');
+      expect(hidden.length).toBeLessThan(20);
+    });
+
+    test('dimmed mode with very long unclosed section preserves it', () => {
+      const longContent = 'word '.repeat(100); // 500 chars of words
+      const script = `Intro [${longContent}`;
+
+      const dimmed = transformStageDirectionsForDisplay(script, 'square', 'dimmed');
+      // Should convert [ to ( and add closing ) for proper display
+      expect(dimmed.startsWith('Intro (')).toBe(true);
+      expect(dimmed.endsWith(')')).toBe(true);
+      expect(dimmed).toContain('word');
+      // Length is script.length + 1 because ) is added to complete the unclosed bracket
+      expect(dimmed.length).toBe(script.length + 1);
+    });
+  });
+
   describe('Real-world script examples', () => {
     test('theater-style script with stage directions', () => {
       const script = `[Enter stage left]
