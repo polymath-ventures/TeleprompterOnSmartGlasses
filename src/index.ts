@@ -74,7 +74,7 @@ class TeleprompterManager {
   private lastSpeechPosition: number = -1; // Last detected position from speech
   private speechLookaheadLines: number = SPEECH_LOOKAHEAD_LINES;
   private minWordsForMatch: number = 3; // Minimum words needed for a reliable match
-  private lineOffset: number = 0; // Offset the line position by 1 to show the match on the 2nd line
+  private lineOffset: number = 0; // Offset for positioning matched text (0 = first line, 1 = second line)
 
   // Stage direction properties
   private stageDirectionDelimiter: DelimiterType = 'none'; // Which delimiter marks stage directions
@@ -108,6 +108,20 @@ class TeleprompterManager {
     this.resetStopwatch();
   }
 
+  /**
+   * Get the maximum valid line position (clamped to 0 for short texts)
+   */
+  private getMaxPosition(): number {
+    return Math.max(0, this.lines.length - this.numberOfLines);
+  }
+
+  /**
+   * Clamp currentLinePosition to valid range [0, maxPosition]
+   */
+  private clampPosition(): void {
+    this.currentLinePosition = Math.max(0, Math.min(this.currentLinePosition, this.getMaxPosition()));
+  }
+
   private processText(preservePosition: boolean = false): void {
     // Remember current position if preserving
     const oldPosition = this.currentLinePosition;
@@ -139,9 +153,9 @@ class TeleprompterManager {
       this.linePositionAccumulator = 0;
     } else {
       // Restore position but cap it if text is now shorter
-      const maxPosition = Math.max(0, this.lines.length - this.numberOfLines);
-      this.currentLinePosition = Math.min(oldPosition, maxPosition);
+      this.currentLinePosition = oldPosition;
       this.linePositionAccumulator = oldAccumulator;
+      this.clampPosition();
     }
 
     // Calculate average words per line (use speech matching text for accurate WPM)
@@ -333,10 +347,7 @@ class TeleprompterManager {
     }
 
     // Cap at the end of text (when last line is at bottom of display)
-    const maxPosition = this.lines.length - this.numberOfLines;
-    if (this.currentLinePosition >= maxPosition) {
-      this.currentLinePosition = maxPosition;
-    }
+    this.clampPosition();
   }
 
   // Get current visible text
@@ -356,10 +367,11 @@ class TeleprompterManager {
 
     // Add progress indicator with stopwatch and current time
     let progressPercent: number;
-    if (this.lines.length <= this.numberOfLines) {
+    const maxPos = this.getMaxPosition();
+    if (maxPos === 0) {
       progressPercent = 100;
     } else {
-      progressPercent = Math.min(100, Math.round((this.currentLinePosition / (this.lines.length - this.numberOfLines)) * 100));
+      progressPercent = Math.min(100, Math.round((this.currentLinePosition / maxPos) * 100));
     }
     const elapsedTime = this.getElapsedTime();
     const projectedTotalTime = this.getProjectedTotalTime(progressPercent);
@@ -411,7 +423,7 @@ class TeleprompterManager {
 
   isAtEnd(): boolean {
     // Consider at end when last line is at bottom of display
-    const isEnd = this.currentLinePosition >= this.lines.length - this.numberOfLines;
+    const isEnd = this.currentLinePosition >= this.getMaxPosition();
     if (isEnd && this.endTimestamp === null && !this.showingFinalLine && !this.showingEndMessage) {
       console.log('Reached end of text, starting final line display');
     }
@@ -503,8 +515,8 @@ class TeleprompterManager {
         const finalPosition = this.skipEmptyLines(targetPosition);
 
         const previousPosition = this.currentLinePosition;
-        // Ensure we only move forward, never backward
-        this.currentLinePosition = Math.max(this.currentLinePosition, Math.min(finalPosition, this.lines.length - this.numberOfLines));
+        // Ensure we only move forward, never backward, and clamp to valid range
+        this.currentLinePosition = Math.max(this.currentLinePosition, Math.min(finalPosition, this.getMaxPosition()));
 
         if (this.currentLinePosition !== previousPosition) {
           this.linePositionAccumulator = 0; // Reset accumulator since we're jumping
@@ -536,7 +548,8 @@ class TeleprompterManager {
     }
 
     // Search window - only look forward, never backward
-    const searchStartLine = this.currentLinePosition; // Start from current position, never behind
+    // searchEndLine uses +1 because slice() end index is exclusive
+    const searchStartLine = this.currentLinePosition;
     const searchEndLine = Math.min(
       linesToSearch.length,
       this.currentLinePosition + this.speechLookaheadLines + 1
@@ -644,7 +657,12 @@ class TeleprompterManager {
    */
   private wordsAreSimilar(word1: string, word2: string): boolean {
     if (word1 === word2) return true;
-    if (word1.length < 2 || word2.length < 2) return word1 === word2; // More lenient for short words
+
+    // Short words (<=3 chars) require exact match to avoid false positives
+    // e.g., "a", "an", "the", "of" matching incorrectly via includes/startsWith
+    if (word1.length <= 3 || word2.length <= 3) {
+      return word1 === word2;
+    }
 
     // Check if one word starts with the other (common with speech recognition)
     if (word1.startsWith(word2) || word2.startsWith(word1)) {
@@ -656,7 +674,7 @@ class TeleprompterManager {
       return true;
     }
 
-    // More lenient edit distance for words
+    // More lenient edit distance for medium-length words
     if (word1.length <= 7 && word2.length <= 7) {
       const maxDistance = Math.max(1, Math.floor(Math.min(word1.length, word2.length) * 0.3)); // Allow 30% character difference
       return this.calculateLevenshteinDistance(word1, word2, maxDistance) <= maxDistance;
@@ -847,14 +865,14 @@ class TeleprompterManager {
   /**
    * Skip over empty lines starting from the given position
    * @param startPosition - Position to start checking from
-   * @returns Position after skipping empty lines
+   * @returns Position after skipping empty lines (clamped to valid range)
    */
   private skipEmptyLines(startPosition: number): number {
-    let position = startPosition;
-    const maxPosition = this.lines.length - this.numberOfLines;
+    let position = Math.max(0, startPosition);
+    const maxPosition = this.getMaxPosition();
 
     // Skip empty lines that would be visible in the current view
-    while (position <= maxPosition) {
+    while (position < maxPosition) {
       let hasContent = false;
 
       // Check if any of the visible lines have content
@@ -924,7 +942,7 @@ class TeleprompterManager {
       ? this.linesForSpeechMatching
       : this.lines;
 
-    const maxPosition = Math.max(0, this.lines.length - this.numberOfLines);
+    const maxPosition = this.getMaxPosition();
 
     // Find next position with speakable content
     let nextPosition = this.currentLinePosition + 1;
@@ -966,6 +984,7 @@ interface SessionTimers {
   endInterval?: NodeJS.Timeout;     // End-of-text display interval
   restartDelay?: NodeJS.Timeout;    // Auto-replay restart delay
   transcriptionUnsubscribe?: () => void;  // Function to unsubscribe from transcription events
+  settingsUnsubscribes?: Array<() => void>;  // Functions to unsubscribe from settings change events
 }
 
 /**
@@ -1003,6 +1022,11 @@ class TeleprompterApp extends TpaServer {
     }
     this.userSessions.get(userId)!.add(sessionId);
 
+    // Create session timers entry early so settings handlers can store their unsubscribes
+    if (!this.sessionTimers.has(sessionId)) {
+      this.sessionTimers.set(sessionId, {});
+    }
+
     try {
       // Set up settings change handlers
       this.setupSettingsHandlers(session, sessionId, userId);
@@ -1025,74 +1049,82 @@ class TeleprompterApp extends TpaServer {
   }
 
   /**
-   * Set up handlers for settings changes
+   * Set up handlers for settings changes and store unsubscribe functions
    */
   private setupSettingsHandlers(
     session: TpaSession,
     sessionId: string,
     userId: string
   ): void {
+    const unsubscribes: Array<() => void> = [];
+
     // Handle line width changes
-    session.settings.onValueChange('line_width', (newValue, oldValue) => {
+    unsubscribes.push(session.settings.onValueChange('line_width', (newValue, oldValue) => {
       console.log(`Line width changed for user ${userId}: ${oldValue} -> ${newValue}`);
       this.applySettings(session, sessionId, userId);
-    });
+    }));
 
     // Handle scroll speed changes
-    session.settings.onValueChange('scroll_speed', (newValue, oldValue) => {
+    unsubscribes.push(session.settings.onValueChange('scroll_speed', (newValue, oldValue) => {
       console.log(`Scroll speed changed for user ${userId}: ${oldValue} -> ${newValue}`);
       this.applySettings(session, sessionId, userId);
-    });
+    }));
 
     // Handle number of lines changes
-    session.settings.onValueChange('number_of_lines', (newValue, oldValue) => {
+    unsubscribes.push(session.settings.onValueChange('number_of_lines', (newValue, oldValue) => {
       console.log(`Number of lines changed for user ${userId}: ${oldValue} -> ${newValue}`);
       this.applySettings(session, sessionId, userId);
-    });
+    }));
 
     // Handle custom text changes
-    session.settings.onValueChange('custom_text', (newValue, oldValue) => {
+    unsubscribes.push(session.settings.onValueChange('custom_text', (newValue, oldValue) => {
       console.log(`Custom text changed for user ${userId}`);
       this.applySettings(session, sessionId, userId);
       this.stopScrolling(sessionId);
       this.startScrolling(session, sessionId, userId);
-    });
+    }));
 
-    session.settings.onValueChange('auto_replay', (newValue, oldValue) => {
+    unsubscribes.push(session.settings.onValueChange('auto_replay', (newValue, oldValue) => {
       console.log(`Auto replay changed for user ${userId}: ${oldValue} -> ${newValue}`);
       this.applySettings(session, sessionId, userId);
-    });
+    }));
 
     // Handle speech scroll enabled changes - need to rewire transcription listener
-    session.settings.onValueChange('speech_scroll_enabled', (newValue, oldValue) => {
+    unsubscribes.push(session.settings.onValueChange('speech_scroll_enabled', (newValue, oldValue) => {
       console.log(`Speech scroll enabled changed for user ${userId}: ${oldValue} -> ${newValue}`);
       this.applySettings(session, sessionId, userId);
       this.updateTranscriptionSubscription(session, sessionId, userId, newValue as boolean);
-    });
+    }));
 
     // Handle show estimated total changes
-    session.settings.onValueChange('show_estimated_total', (newValue, oldValue) => {
+    unsubscribes.push(session.settings.onValueChange('show_estimated_total', (newValue, oldValue) => {
       console.log(`Show estimated total changed for user ${userId}: ${oldValue} -> ${newValue}`);
       this.applySettings(session, sessionId, userId);
-    });
+    }));
 
     // Handle stage direction delimiter changes
-    session.settings.onValueChange('stage_direction_delimiter', (newValue, oldValue) => {
+    unsubscribes.push(session.settings.onValueChange('stage_direction_delimiter', (newValue, oldValue) => {
       console.log(`Stage direction delimiter changed for user ${userId}: ${oldValue} -> ${newValue}`);
       this.applySettings(session, sessionId, userId);
-    });
+    }));
 
     // Handle stage direction display mode changes
-    session.settings.onValueChange('stage_direction_display', (newValue, oldValue) => {
+    unsubscribes.push(session.settings.onValueChange('stage_direction_display', (newValue, oldValue) => {
       console.log(`Stage direction display changed for user ${userId}: ${oldValue} -> ${newValue}`);
       this.applySettings(session, sessionId, userId);
-    });
+    }));
 
     // Handle debug logging changes
-    session.settings.onValueChange('debug_logging', (newValue, oldValue) => {
+    unsubscribes.push(session.settings.onValueChange('debug_logging', (newValue, oldValue) => {
       console.log(`Debug logging changed for user ${userId}: ${oldValue} -> ${newValue}`);
       this.applySettings(session, sessionId, userId);
-    });
+    }));
+
+    // Store unsubscribes in session timers for cleanup
+    const timers = this.sessionTimers.get(sessionId);
+    if (timers) {
+      timers.settingsUnsubscribes = unsubscribes;
+    }
   }
 
   /**
@@ -1257,10 +1289,12 @@ class TeleprompterApp extends TpaServer {
       return;
     }
 
-    // IMPORTANT: Register session IMMEDIATELY before any async operations
-    // This ensures all subsequent checks pass
-    const timers: SessionTimers = {};
-    this.sessionTimers.set(sessionId, timers);
+    // Get or create session timers entry (may already exist from onSession)
+    let timers = this.sessionTimers.get(sessionId);
+    if (!timers) {
+      timers = {};
+      this.sessionTimers.set(sessionId, timers);
+    }
     console.log(`[Session ${sessionId}]: Session registered, starting teleprompter`);
 
     // Set up speech-based scrolling if enabled
@@ -1411,6 +1445,12 @@ class TeleprompterApp extends TpaServer {
       // Unsubscribe from transcription events to prevent handler accumulation
       if (timers.transcriptionUnsubscribe) {
         timers.transcriptionUnsubscribe();
+      }
+      // Unsubscribe from settings change events
+      if (timers.settingsUnsubscribes) {
+        for (const unsubscribe of timers.settingsUnsubscribes) {
+          unsubscribe();
+        }
       }
       this.sessionTimers.delete(sessionId);
       console.log(`[Session ${sessionId}]: Stopped all timers and unsubscribed from events`);
