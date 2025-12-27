@@ -15,8 +15,10 @@ A teleprompter app for MentraOS smart glasses that displays scrolling text with 
 
 ### Key Files
 - `src/index.ts` - Main app (TeleprompterApp extends TpaServer) and TeleprompterManager class
+- `src/remoteControl.ts` - HTTP API for Bluetooth remote control
 - `src/utils/src/stageDirections.ts` - Stage direction filtering utilities
 - `app_config.json` - Settings schema for MentraOS console import
+- `ios-remote/` - iOS companion app for Bluetooth presentation remotes
 
 ### Features
 - **Speech-based scrolling**: Matches spoken words to script, auto-advances position
@@ -25,6 +27,20 @@ A teleprompter app for MentraOS smart glasses that displays scrolling text with 
   - Display modes: normal, dimmed (shows in parentheses), hidden
   - Stage directions stripped for speech matching regardless of display mode
 - **Configurable display**: Line width, number of lines, scroll speed, auto-replay
+- **Remote control API**: HTTP endpoints for external control via Bluetooth presentation remotes
+
+### Remote Control API
+The app exposes HTTP endpoints for external control (e.g., iOS app with Bluetooth clicker):
+
+- `GET /api/remote/sessions` - List active teleprompter sessions
+- `POST /api/remote/control/:userId/scroll` - Scroll forward/back
+- `POST /api/remote/control/:userId/reset` - Reset to beginning
+- `POST /api/remote/control/:userId/goto` - Jump to specific line
+- `GET /api/remote/control/:userId/status` - Get session status
+
+**Security**: Set `REMOTE_CONTROL_API_KEY` in `.env` to require Bearer token authentication.
+
+**iOS Companion App**: See `ios-remote/` for a SwiftUI app that captures Bluetooth HID events.
 
 ### Session Management
 - `SessionTimers` interface tracks all 5 timer types per session

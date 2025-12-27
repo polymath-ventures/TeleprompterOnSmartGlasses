@@ -13,6 +13,11 @@ import {
   type DelimiterType,
   type DisplayMode,
 } from './utils/src/stageDirections';
+import {
+  createRemoteControlRouter,
+  DEFAULT_REMOTE_CONTROL_CONFIG,
+  type TeleprompterManagerInterface,
+} from './remoteControl';
 
 // =============================================================================
 // Configuration Constants
@@ -438,6 +443,59 @@ class TeleprompterManager {
   // Get current line position for debugging
   getCurrentLinePosition(): number {
     return this.currentLinePosition;
+  }
+
+  // Alias for getCurrentLinePosition (used by remote control API)
+  getCurrentPosition(): number {
+    return this.currentLinePosition;
+  }
+
+  /**
+   * Scroll forward by a specific number of lines
+   * Used by remote control API for presentation remotes
+   */
+  scrollForward(lines: number): void {
+    if (this.lines.length === 0) return;
+
+    this.currentLinePosition += lines;
+    this.currentLinePosition = this.skipEmptyLines(this.currentLinePosition);
+    this.clampPosition();
+    this.linePositionAccumulator = 0; // Reset accumulator when manually scrolling
+    this.clearSpeechBuffer(); // Clear buffer to avoid jumps after manual scroll
+  }
+
+  /**
+   * Scroll backward by a specific number of lines
+   * Used by remote control API for presentation remotes
+   */
+  scrollBack(lines: number): void {
+    if (this.lines.length === 0) return;
+
+    this.currentLinePosition = Math.max(0, this.currentLinePosition - lines);
+    this.clampPosition();
+    this.linePositionAccumulator = 0;
+    this.clearSpeechBuffer();
+  }
+
+  /**
+   * Jump to a specific line number
+   * Used by remote control API for presentation remotes
+   */
+  goToLine(line: number): void {
+    if (this.lines.length === 0) return;
+
+    this.currentLinePosition = Math.max(0, line);
+    this.clampPosition();
+    this.linePositionAccumulator = 0;
+    this.clearSpeechBuffer();
+
+    // Reset end-of-text state if jumping away from end
+    if (this.currentLinePosition < this.getMaxPosition()) {
+      this.showingEndMessage = false;
+      this.showingFinalLine = false;
+      this.endTimestamp = null;
+      this.finalLineTimestamp = null;
+    }
   }
 
   clear(): void {
@@ -1510,6 +1568,14 @@ class TeleprompterApp extends TpaServer {
       timers.transcriptionUnsubscribe = undefined;
     }
   }
+
+  /**
+   * Get the user teleprompter managers map for external control
+   * Used by the remote control API
+   */
+  getUserTeleprompterManagers(): Map<string, TeleprompterManager> {
+    return this.userTeleprompterManagers;
+  }
 }
 
 // Create and start the app
@@ -1520,6 +1586,18 @@ const expressApp = teleprompterApp.getExpressApp();
 expressApp.get('/health', (req, res) => {
   res.json({ status: 'healthy', app: PACKAGE_NAME });
 });
+
+// Add remote control API endpoints for Bluetooth presentation remotes
+expressApp.use(require('express').json()); // Ensure JSON body parsing is enabled
+const remoteControlRouter = createRemoteControlRouter(
+  teleprompterApp as unknown as { getUserTeleprompterManagers: () => Map<string, TeleprompterManagerInterface> },
+  DEFAULT_REMOTE_CONTROL_CONFIG
+);
+expressApp.use('/api/remote', remoteControlRouter);
+console.log('Remote control API enabled at /api/remote');
+if (!DEFAULT_REMOTE_CONTROL_CONFIG.apiKey) {
+  console.warn('WARNING: REMOTE_CONTROL_API_KEY not set - remote control API is running without authentication');
+}
 
 // Start the server
 teleprompterApp.start().then(() => {
