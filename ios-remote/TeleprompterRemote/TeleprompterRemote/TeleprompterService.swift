@@ -5,6 +5,7 @@
  */
 
 import Foundation
+import Combine
 
 // MARK: - API Response Types
 
@@ -84,8 +85,9 @@ class TeleprompterService: ObservableObject {
         stopPolling()
         refreshSessions()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                await self?.refreshSessions()
+            guard let self else { return }
+            Task { @MainActor [weak self] in
+                self?.refreshSessions()
             }
         }
     }
@@ -194,7 +196,7 @@ class TeleprompterService: ObservableObject {
             lastError = error.localizedDescription
         }
 
-        await refreshSessions()
+        refreshSessions()
     }
 
     func goToLine(_ line: Int) async {
@@ -230,7 +232,7 @@ class TeleprompterService: ObservableObject {
             lastError = error.localizedDescription
         }
 
-        await refreshSessions()
+        refreshSessions()
     }
 
     private func sendScrollCommand(direction: String, lines: Int) async {
