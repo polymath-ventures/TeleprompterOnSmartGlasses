@@ -13,6 +13,11 @@ import {
   type DelimiterType,
   type DisplayMode,
 } from './utils/src/stageDirections';
+import {
+  createRemoteControlRouter,
+  DEFAULT_REMOTE_CONTROL_CONFIG,
+  type TeleprompterManagerInterface,
+} from './remoteControl';
 
 // =============================================================================
 // Configuration Constants
@@ -20,9 +25,15 @@ import {
 
 // Server configuration
 const DEFAULT_PORT = 3000;
-const PORT = process.env.PORT ? parseInt(process.env.PORT) : DEFAULT_PORT;
+const PORT = process.env.PORT ? (parseInt(process.env.PORT, 10) || DEFAULT_PORT) : DEFAULT_PORT;
 const PACKAGE_NAME = process.env.PACKAGE_NAME;
 const MENTRAOS_API_KEY = process.env.MENTRAOS_API_KEY || process.env.AUGMENTOS_API_KEY;
+
+// Validate required environment variables
+if (!PACKAGE_NAME) {
+  console.error('FATAL: PACKAGE_NAME environment variable is required');
+  process.exit(1);
+}
 
 // Teleprompter display defaults
 const DEFAULT_LINE_WIDTH = 38;
@@ -438,6 +449,59 @@ class TeleprompterManager {
   // Get current line position for debugging
   getCurrentLinePosition(): number {
     return this.currentLinePosition;
+  }
+
+  // Alias for getCurrentLinePosition (used by remote control API)
+  getCurrentPosition(): number {
+    return this.currentLinePosition;
+  }
+
+  /**
+   * Scroll forward by a specific number of lines
+   * Used by remote control API for presentation remotes
+   */
+  scrollForward(lines: number): void {
+    if (this.lines.length === 0) return;
+
+    this.currentLinePosition += lines;
+    this.currentLinePosition = this.skipEmptyLines(this.currentLinePosition);
+    this.clampPosition();
+    this.linePositionAccumulator = 0; // Reset accumulator when manually scrolling
+    this.clearSpeechBuffer(); // Clear buffer to avoid jumps after manual scroll
+  }
+
+  /**
+   * Scroll backward by a specific number of lines
+   * Used by remote control API for presentation remotes
+   */
+  scrollBack(lines: number): void {
+    if (this.lines.length === 0) return;
+
+    this.currentLinePosition = Math.max(0, this.currentLinePosition - lines);
+    this.clampPosition();
+    this.linePositionAccumulator = 0;
+    this.clearSpeechBuffer();
+  }
+
+  /**
+   * Jump to a specific line number
+   * Used by remote control API for presentation remotes
+   */
+  goToLine(line: number): void {
+    if (this.lines.length === 0) return;
+
+    this.currentLinePosition = Math.max(0, line);
+    this.clampPosition();
+    this.linePositionAccumulator = 0;
+    this.clearSpeechBuffer();
+
+    // Reset end-of-text state if jumping away from end
+    if (this.currentLinePosition < this.getMaxPosition()) {
+      this.showingEndMessage = false;
+      this.showingFinalLine = false;
+      this.endTimestamp = null;
+      this.finalLineTimestamp = null;
+    }
   }
 
   clear(): void {
@@ -1510,21 +1574,104 @@ class TeleprompterApp extends TpaServer {
       timers.transcriptionUnsubscribe = undefined;
     }
   }
+
+  /**
+   * Get the user teleprompter managers map for external control
+   * Used by the remote control API
+   */
+  getUserTeleprompterManagers(): Map<string, TeleprompterManager> {
+    return this.userTeleprompterManagers;
+  }
 }
 
 // Create and start the app
 const teleprompterApp = new TeleprompterApp();
 
-// Add health check endpoint
+// Add health check endpoint that actually checks health
 const expressApp = teleprompterApp.getExpressApp();
 expressApp.get('/health', (req, res) => {
-  res.json({ status: 'healthy', app: PACKAGE_NAME });
+  const memUsage = process.memoryUsage();
+  const activeSessions = teleprompterApp.getUserTeleprompterManagers().size;
+
+  // Check if memory usage is too high (> 400MB heap used)
+  const maxHeapMB = 400;
+  const heapUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
+
+  if (heapUsedMB > maxHeapMB) {
+    res.status(503).json({
+      status: 'unhealthy',
+      reason: 'memory_pressure',
+      app: PACKAGE_NAME,
+      activeSessions,
+      heapUsedMB,
+      uptimeSeconds: Math.round(process.uptime()),
+    });
+    return;
+  }
+
+  res.json({
+    status: 'healthy',
+    app: PACKAGE_NAME,
+    activeSessions,
+    heapUsedMB,
+    uptimeSeconds: Math.round(process.uptime()),
+  });
 });
+
+// Add remote control API endpoints for Bluetooth presentation remotes (only if API key is configured)
+if (DEFAULT_REMOTE_CONTROL_CONFIG.apiKey) {
+  expressApp.use(require('express').json({ limit: '1mb' }));
+  const remoteControlRouter = createRemoteControlRouter(
+    teleprompterApp as unknown as { getUserTeleprompterManagers: () => Map<string, TeleprompterManagerInterface> },
+    DEFAULT_REMOTE_CONTROL_CONFIG
+  );
+  expressApp.use('/api/remote', remoteControlRouter);
+  console.log('Remote control API enabled at /api/remote');
+} else {
+  console.log('Remote control API disabled (REMOTE_CONTROL_API_KEY not set)');
+}
+
+// Graceful shutdown handler
+let isShuttingDown = false;
+
+async function gracefulShutdown(signal: string): Promise<void> {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  console.log(`\n${signal} received, starting graceful shutdown...`);
+
+  // Force exit after 30 seconds if graceful shutdown takes too long
+  const forceExitTimeout = setTimeout(() => {
+    console.error('Graceful shutdown timed out after 30s, forcing exit');
+    process.exit(1);
+  }, 30000);
+  forceExitTimeout.unref(); // Don't keep process alive just for this timer
+
+  try {
+    // Log active sessions
+    const managers = teleprompterApp.getUserTeleprompterManagers();
+    console.log(`Active sessions: ${managers.size}`);
+
+    // Give existing requests a moment to complete (5 seconds)
+    console.log('Waiting 5s for in-flight requests to complete...');
+    await new Promise(resolve => setTimeout(resolve, 5000));
+
+    console.log('Graceful shutdown complete');
+    process.exit(0);
+  } catch (error) {
+    console.error('Error during shutdown:', error);
+    process.exit(1);
+  }
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // Start the server
 teleprompterApp.start().then(() => {
   console.log(`${PACKAGE_NAME} server running on port ${PORT}`);
 }).catch(error => {
   console.error('Failed to start server:', error);
+  process.exit(1);
 });
 
