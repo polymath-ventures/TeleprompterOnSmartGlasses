@@ -26,9 +26,9 @@ These remotes typically send:
 ## Prerequisites
 
 - **Apple Developer Account** - Required to install apps on a physical iPhone. Sign up at [developer.apple.com](https://developer.apple.com) ($99/year for individuals)
-- **Xcode 15.0+** - Download from the Mac App Store
+- **Xcode 26+** - Download from the Mac App Store
+- **Mac with macOS Sequoia 15.6+** - Required to run Xcode 26
 - **iPhone with iOS 16.0+** - Must be a physical device (simulator doesn't support Bluetooth HID)
-- **Mac** - Required to run Xcode
 
 ## Setup Instructions
 
@@ -134,6 +134,7 @@ For TestFlight or App Store distribution, ensure you:
 ## Requirements
 
 - **Apple Developer Account** ($99/year) - Required to install on physical device
-- **Mac with Xcode 15.0+** - Required to build the app
+- **Mac with macOS Sequoia 15.6+** - Required to run Xcode 26
+- **Xcode 26+** - Required to build the app
 - **iPhone with iOS 16.0+** - Physical device required (no simulator)
 - **Teleprompter server** with `REMOTE_CONTROL_API_KEY` configured
