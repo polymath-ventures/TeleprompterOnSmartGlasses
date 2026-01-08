@@ -19,31 +19,31 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 20) {
-                // Connection Status
-                connectionStatusView
+            ScrollView {
+                VStack(spacing: 20) {
+                    // Connection Status
+                    connectionStatusView
 
-                // Session Info
-                if let session = service.currentSession {
-                    sessionInfoView(session)
-                } else if service.isConnected {
-                    noSessionView
+                    // Session Info
+                    if let session = service.currentSession {
+                        sessionInfoView(session)
+                    } else if service.isConnected {
+                        noSessionView
+                    }
+
+                    // Keyboard capture area
+                    keyboardCaptureView
+                        .padding(.vertical, 20)
+
+                    // Manual controls
+                    manualControlsView
+
+                    // Last action/error
+                    statusMessageView
                 }
-
-                Spacer()
-
-                // Keyboard capture area
-                keyboardCaptureView
-
-                Spacer()
-
-                // Manual controls
-                manualControlsView
-
-                // Last action/error
-                statusMessageView
+                .padding()
             }
-            .padding()
+            .scrollDismissesKeyboard(.never)
             .navigationTitle("Teleprompter Remote")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -312,6 +312,12 @@ class KeyCaptureTextField: UITextField {
     var keyPressHandler: ((KeyboardKey) -> Void)?
 
     override var canBecomeFirstResponder: Bool { true }
+
+    // Hide the software keyboard - we only need hardware key capture
+    override var inputView: UIView? {
+        get { UIView() }
+        set { }
+    }
 
     // Capture hardware keyboard events
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
