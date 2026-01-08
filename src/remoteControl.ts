@@ -139,10 +139,9 @@ class RateLimiter {
  */
 export function createAuthMiddleware(config: RemoteControlConfig) {
   return (req: Request, res: Response, next: NextFunction): void => {
-    // If no API key configured, allow all requests (development mode)
+    // Reject if no API key configured (defense in depth - API shouldn't be mounted without key)
     if (!config.apiKey) {
-      console.warn('[RemoteControl] No API key configured - running in insecure mode');
-      next();
+      res.status(503).json({ success: false, message: 'Remote control API not configured' });
       return;
     }
 

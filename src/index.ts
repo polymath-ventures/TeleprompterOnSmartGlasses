@@ -1587,16 +1587,17 @@ expressApp.get('/health', (req, res) => {
   res.json({ status: 'healthy', app: PACKAGE_NAME });
 });
 
-// Add remote control API endpoints for Bluetooth presentation remotes
-expressApp.use(require('express').json()); // Ensure JSON body parsing is enabled
-const remoteControlRouter = createRemoteControlRouter(
-  teleprompterApp as unknown as { getUserTeleprompterManagers: () => Map<string, TeleprompterManagerInterface> },
-  DEFAULT_REMOTE_CONTROL_CONFIG
-);
-expressApp.use('/api/remote', remoteControlRouter);
-console.log('Remote control API enabled at /api/remote');
-if (!DEFAULT_REMOTE_CONTROL_CONFIG.apiKey) {
-  console.warn('WARNING: REMOTE_CONTROL_API_KEY not set - remote control API is running without authentication');
+// Add remote control API endpoints for Bluetooth presentation remotes (only if API key is configured)
+if (DEFAULT_REMOTE_CONTROL_CONFIG.apiKey) {
+  expressApp.use(require('express').json({ limit: '1mb' }));
+  const remoteControlRouter = createRemoteControlRouter(
+    teleprompterApp as unknown as { getUserTeleprompterManagers: () => Map<string, TeleprompterManagerInterface> },
+    DEFAULT_REMOTE_CONTROL_CONFIG
+  );
+  expressApp.use('/api/remote', remoteControlRouter);
+  console.log('Remote control API enabled at /api/remote');
+} else {
+  console.log('Remote control API disabled (REMOTE_CONTROL_API_KEY not set)');
 }
 
 // Start the server

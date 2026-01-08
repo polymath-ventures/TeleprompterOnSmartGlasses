@@ -126,20 +126,22 @@ describe('createAuthMiddleware', () => {
     expect(res.statusCode).toBe(401);
   });
 
-  test('allows all requests when no API key configured (development mode)', () => {
+  test('rejects all requests when no API key configured (defense in depth)', () => {
     const devConfig: RemoteControlConfig = {
       apiKey: undefined,
       rateLimitWindowMs: 60000,
       rateLimitMaxRequests: 60,
     };
     const middleware = createAuthMiddleware(devConfig);
-    const req = createMockRequest(); // No auth header
+    const req = createMockRequest();
     const res = createMockResponse();
     let nextCalled = false;
 
     middleware(req, res, () => { nextCalled = true; });
 
-    expect(nextCalled).toBe(true);
+    expect(nextCalled).toBe(false);
+    expect(res.statusCode).toBe(503);
+    expect(res.jsonData).toEqual({ success: false, message: 'Remote control API not configured' });
   });
 });
 
