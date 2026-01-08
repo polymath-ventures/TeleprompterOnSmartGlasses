@@ -415,7 +415,7 @@ export function createRemoteControlRouter(
 export const DEFAULT_REMOTE_CONTROL_CONFIG: RemoteControlConfig = {
   apiKey: process.env.REMOTE_CONTROL_API_KEY,
   rateLimitWindowMs: 60 * 1000, // 1 minute
-  rateLimitMaxRequests: 120,    // 120 requests per minute (2 per second)
+  rateLimitMaxRequests: 300,    // 300 requests per minute (5 per second)
 };
 
 // Export for testing - resets the rate limiter singleton

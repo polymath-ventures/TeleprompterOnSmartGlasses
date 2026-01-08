@@ -83,7 +83,7 @@ class TeleprompterService: ObservableObject {
     func startPolling() {
         stopPolling()
         refreshSessions()
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 await self?.refreshSessions()
             }
@@ -124,7 +124,7 @@ class TeleprompterService: ObservableObject {
         }
 
         var request = URLRequest(url: url)
-        request.timeoutInterval = 5
+        request.timeoutInterval = 10
         if !apiKey.isEmpty {
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         }
@@ -251,12 +251,7 @@ class TeleprompterService: ObservableObject {
             if !apiKey.isEmpty {
                 request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
             }
-            request.httpBody = try JSONEncoder().encode([
-                "direction": direction,
-                "lines": lines
-            ] as [String: Any])
-
-            // Manual JSON encoding for mixed types
+                // Manual JSON encoding for mixed types
             let body: [String: Any] = ["direction": direction, "lines": lines]
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
