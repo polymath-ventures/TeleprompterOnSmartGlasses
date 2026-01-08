@@ -38,9 +38,28 @@ The app exposes HTTP endpoints for external control (e.g., iOS app with Bluetoot
 - `POST /api/remote/control/:userId/goto` - Jump to specific line
 - `GET /api/remote/control/:userId/status` - Get session status
 
-**Security**: Set `REMOTE_CONTROL_API_KEY` in `.env` to require Bearer token authentication.
+**Security**: Set `REMOTE_CONTROL_API_KEY` in `.env` to require Bearer token authentication. If no key is configured, the remote control API is disabled entirely.
 
-**iOS Companion App**: See `ios-remote/` for a SwiftUI app that captures Bluetooth HID events.
+### iOS Companion App
+
+The `ios-remote/` directory contains a SwiftUI app that captures Bluetooth HID keyboard events from presentation remotes and sends scroll commands to the server.
+
+**Requirements**:
+- Apple Developer Account ($99/year) - Required to install on physical iPhone
+- Mac with Xcode 15.0+
+- iPhone with iOS 16.0+ (physical device required, simulator doesn't support Bluetooth HID)
+
+**Quick Start**:
+1. Open `ios-remote/TeleprompterRemote` in Xcode
+2. Configure signing with your Apple Developer account
+3. Connect iPhone via USB, enable Developer Mode in Settings
+4. Build and run (⌘R)
+5. Pair Bluetooth remote in iPhone Settings > Bluetooth
+6. Configure server URL and API key in the app
+
+**Supported Remotes**: Logitech Spotlight/R400/R500/R800, DinoFire, BEBONCOOL, and most generic Bluetooth presentation clickers that send Page Up/Down or Arrow keys.
+
+See `ios-remote/README.md` for detailed build and setup instructions.
 
 ### Session Management
 - `SessionTimers` interface tracks all 5 timer types per session

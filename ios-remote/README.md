@@ -23,13 +23,32 @@ These remotes typically send:
 - Page Down / Right Arrow / Space → Scroll Forward
 - Page Up / Left Arrow → Scroll Back
 
+## Prerequisites
+
+- **Apple Developer Account** - Required to install apps on a physical iPhone. Sign up at [developer.apple.com](https://developer.apple.com) ($99/year for individuals)
+- **Xcode 15.0+** - Download from the Mac App Store
+- **iPhone with iOS 16.0+** - Must be a physical device (simulator doesn't support Bluetooth HID)
+- **Mac** - Required to run Xcode
+
 ## Setup Instructions
 
-### 1. Build the App
+### 1. Build the App in Xcode
 
-1. Open `TeleprompterRemote` folder in Xcode
-2. Select your development team in Signing & Capabilities
-3. Build and run on your iPhone (not simulator - needs Bluetooth)
+1. Open Xcode and select **File > Open** (or drag the `ios-remote/TeleprompterRemote` folder onto Xcode)
+2. Wait for Xcode to index the project and resolve packages
+3. Select your iPhone from the device dropdown (top of window, next to the play button)
+4. Configure signing:
+   - Click on the project name in the left sidebar ("TeleprompterRemote")
+   - Select the "TeleprompterRemote" target
+   - Go to **Signing & Capabilities** tab
+   - Check "Automatically manage signing"
+   - Select your Team (your Apple Developer account)
+   - If you see a bundle identifier error, change it to something unique (e.g., `com.yourname.teleprompter-remote`)
+5. Connect your iPhone via USB cable
+6. On your iPhone, go to **Settings > Privacy & Security > Developer Mode** and enable it (iOS 16+ requirement)
+7. Trust your Mac: When prompted on your iPhone, tap "Trust" to allow your computer to install apps
+8. Click the **Play button (▶)** in Xcode to build and install the app
+9. First launch: On your iPhone, go to **Settings > General > VPN & Device Management**, find your developer certificate, and tap "Trust"
 
 ### 2. Pair Your Remote
 
@@ -111,7 +130,7 @@ For TestFlight or App Store distribution, ensure you:
 
 ## Requirements
 
-- iOS 16.0+
-- iPhone with Bluetooth
-- Xcode 15.0+ for building
-- Teleprompter server with remote control API enabled
+- **Apple Developer Account** ($99/year) - Required to install on physical device
+- **Mac with Xcode 15.0+** - Required to build the app
+- **iPhone with iOS 16.0+** - Physical device required (no simulator)
+- **Teleprompter server** with `REMOTE_CONTROL_API_KEY` configured
