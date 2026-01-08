@@ -1634,26 +1634,34 @@ if (DEFAULT_REMOTE_CONTROL_CONFIG.apiKey) {
 // Graceful shutdown handler
 let isShuttingDown = false;
 
-function gracefulShutdown(signal: string): void {
+async function gracefulShutdown(signal: string): Promise<void> {
   if (isShuttingDown) return;
   isShuttingDown = true;
 
   console.log(`\n${signal} received, starting graceful shutdown...`);
 
-  // Give in-flight requests 30 seconds to complete
-  const shutdownTimeout = setTimeout(() => {
-    console.error('Graceful shutdown timed out, forcing exit');
+  // Force exit after 30 seconds if graceful shutdown takes too long
+  const forceExitTimeout = setTimeout(() => {
+    console.error('Graceful shutdown timed out after 30s, forcing exit');
     process.exit(1);
   }, 30000);
+  forceExitTimeout.unref(); // Don't keep process alive just for this timer
 
-  // Clear all session timers to stop processing
-  const managers = teleprompterApp.getUserTeleprompterManagers();
-  console.log(`Cleaning up ${managers.size} active sessions...`);
+  try {
+    // Log active sessions
+    const managers = teleprompterApp.getUserTeleprompterManagers();
+    console.log(`Active sessions: ${managers.size}`);
 
-  // Exit cleanly
-  clearTimeout(shutdownTimeout);
-  console.log('Graceful shutdown complete');
-  process.exit(0);
+    // Give existing requests a moment to complete (5 seconds)
+    console.log('Waiting 5s for in-flight requests to complete...');
+    await new Promise(resolve => setTimeout(resolve, 5000));
+
+    console.log('Graceful shutdown complete');
+    process.exit(0);
+  } catch (error) {
+    console.error('Error during shutdown:', error);
+    process.exit(1);
+  }
 }
 
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
