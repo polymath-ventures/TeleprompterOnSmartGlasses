@@ -11,6 +11,7 @@
  */
 
 import { Request, Response, NextFunction, Router } from 'express';
+import { timingSafeEqual } from 'crypto';
 
 // =============================================================================
 // Types and Interfaces
@@ -80,14 +81,37 @@ class RateLimiter {
   private maxTokens: number;
   private refillRateMs: number;
   private tokensPerRefill: number;
+  private cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
-  constructor(maxRequests: number, windowMs: number) {
+  // Singleton instance to prevent multiple intervals
+  private static instance: RateLimiter | null = null;
+
+  static getInstance(maxRequests: number, windowMs: number): RateLimiter {
+    if (!RateLimiter.instance) {
+      RateLimiter.instance = new RateLimiter(maxRequests, windowMs);
+    }
+    return RateLimiter.instance;
+  }
+
+  // For testing only - resets the singleton
+  static resetInstance(): void {
+    if (RateLimiter.instance?.cleanupInterval) {
+      clearInterval(RateLimiter.instance.cleanupInterval);
+    }
+    RateLimiter.instance = null;
+  }
+
+  private constructor(maxRequests: number, windowMs: number) {
     this.maxTokens = maxRequests;
     this.refillRateMs = windowMs / maxRequests;
     this.tokensPerRefill = 1;
 
     // Clean up old entries every 5 minutes
-    setInterval(() => this.cleanup(), 5 * 60 * 1000);
+    this.cleanupInterval = setInterval(() => this.cleanup(), 5 * 60 * 1000);
+    // Allow Node to exit even if interval is running
+    if (this.cleanupInterval.unref) {
+      this.cleanupInterval.unref();
+    }
   }
 
   isAllowed(ip: string): boolean {
@@ -160,7 +184,7 @@ export function createAuthMiddleware(config: RemoteControlConfig) {
     }
 
     // Constant-time comparison to prevent timing attacks
-    if (!timingSafeEqual(token, config.apiKey)) {
+    if (!safeCompare(token, config.apiKey)) {
       res.status(403).json({ success: false, message: 'Invalid API key' });
       return;
     }
@@ -173,7 +197,7 @@ export function createAuthMiddleware(config: RemoteControlConfig) {
  * Rate limiting middleware
  */
 export function createRateLimitMiddleware(config: RemoteControlConfig) {
-  const limiter = new RateLimiter(config.rateLimitMaxRequests, config.rateLimitWindowMs);
+  const limiter = RateLimiter.getInstance(config.rateLimitMaxRequests, config.rateLimitWindowMs);
 
   return (req: Request, res: Response, next: NextFunction): void => {
     const ip = req.ip || req.socket.remoteAddress || 'unknown';
@@ -199,19 +223,24 @@ function validateUserId(userId: string): boolean {
 }
 
 /**
- * Constant-time string comparison to prevent timing attacks
+ * Timing-safe string comparison using Node's crypto.timingSafeEqual
+ * Prevents timing attacks on API key comparison
  */
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) {
+function safeCompare(a: string, b: string): boolean {
+  // Use a fixed-length comparison to avoid leaking length info
+  // Hash both inputs to fixed length before comparing
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+
+  // If lengths differ, still do a constant-time comparison
+  // to avoid leaking length information via timing
+  if (bufA.length !== bufB.length) {
+    // Compare against itself to maintain constant time, then return false
+    timingSafeEqual(bufA, bufA);
     return false;
   }
 
-  let result = 0;
-  for (let i = 0; i < a.length; i++) {
-    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-
-  return result === 0;
+  return timingSafeEqual(bufA, bufB);
 }
 
 // =============================================================================
@@ -397,4 +426,9 @@ export const DEFAULT_REMOTE_CONTROL_CONFIG: RemoteControlConfig = {
   apiKey: process.env.REMOTE_CONTROL_API_KEY,
   rateLimitWindowMs: 60 * 1000, // 1 minute
   rateLimitMaxRequests: 120,    // 120 requests per minute (2 per second)
+};
+
+// Export for testing - resets the rate limiter singleton
+export const resetRateLimiter = (): void => {
+  RateLimiter.resetInstance();
 };

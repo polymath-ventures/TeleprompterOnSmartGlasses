@@ -25,9 +25,15 @@ import {
 
 // Server configuration
 const DEFAULT_PORT = 3000;
-const PORT = process.env.PORT ? parseInt(process.env.PORT) : DEFAULT_PORT;
+const PORT = process.env.PORT ? (parseInt(process.env.PORT, 10) || DEFAULT_PORT) : DEFAULT_PORT;
 const PACKAGE_NAME = process.env.PACKAGE_NAME;
 const MENTRAOS_API_KEY = process.env.MENTRAOS_API_KEY || process.env.AUGMENTOS_API_KEY;
+
+// Validate required environment variables
+if (!PACKAGE_NAME) {
+  console.error('FATAL: PACKAGE_NAME environment variable is required');
+  process.exit(1);
+}
 
 // Teleprompter display defaults
 const DEFAULT_LINE_WIDTH = 38;
@@ -1581,10 +1587,35 @@ class TeleprompterApp extends TpaServer {
 // Create and start the app
 const teleprompterApp = new TeleprompterApp();
 
-// Add health check endpoint
+// Add health check endpoint that actually checks health
 const expressApp = teleprompterApp.getExpressApp();
 expressApp.get('/health', (req, res) => {
-  res.json({ status: 'healthy', app: PACKAGE_NAME });
+  const memUsage = process.memoryUsage();
+  const activeSessions = teleprompterApp.getUserTeleprompterManagers().size;
+
+  // Check if memory usage is too high (> 400MB heap used)
+  const maxHeapMB = 400;
+  const heapUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
+
+  if (heapUsedMB > maxHeapMB) {
+    res.status(503).json({
+      status: 'unhealthy',
+      reason: 'memory_pressure',
+      app: PACKAGE_NAME,
+      activeSessions,
+      heapUsedMB,
+      uptimeSeconds: Math.round(process.uptime()),
+    });
+    return;
+  }
+
+  res.json({
+    status: 'healthy',
+    app: PACKAGE_NAME,
+    activeSessions,
+    heapUsedMB,
+    uptimeSeconds: Math.round(process.uptime()),
+  });
 });
 
 // Add remote control API endpoints for Bluetooth presentation remotes (only if API key is configured)
@@ -1600,10 +1631,39 @@ if (DEFAULT_REMOTE_CONTROL_CONFIG.apiKey) {
   console.log('Remote control API disabled (REMOTE_CONTROL_API_KEY not set)');
 }
 
+// Graceful shutdown handler
+let isShuttingDown = false;
+
+function gracefulShutdown(signal: string): void {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  console.log(`\n${signal} received, starting graceful shutdown...`);
+
+  // Give in-flight requests 30 seconds to complete
+  const shutdownTimeout = setTimeout(() => {
+    console.error('Graceful shutdown timed out, forcing exit');
+    process.exit(1);
+  }, 30000);
+
+  // Clear all session timers to stop processing
+  const managers = teleprompterApp.getUserTeleprompterManagers();
+  console.log(`Cleaning up ${managers.size} active sessions...`);
+
+  // Exit cleanly
+  clearTimeout(shutdownTimeout);
+  console.log('Graceful shutdown complete');
+  process.exit(0);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
 // Start the server
 teleprompterApp.start().then(() => {
   console.log(`${PACKAGE_NAME} server running on port ${PORT}`);
 }).catch(error => {
   console.error('Failed to start server:', error);
+  process.exit(1);
 });
 

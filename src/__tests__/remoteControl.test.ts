@@ -4,6 +4,7 @@ import {
   createAuthMiddleware,
   createRateLimitMiddleware,
   createRemoteControlRouter,
+  resetRateLimiter,
   type RemoteControlConfig,
   type TeleprompterAppInterface,
   type TeleprompterManagerInterface,
@@ -150,6 +151,10 @@ describe('createAuthMiddleware', () => {
 // =============================================================================
 
 describe('createRateLimitMiddleware', () => {
+  beforeEach(() => {
+    resetRateLimiter();
+  });
+
   test('allows requests within rate limit', () => {
     const config: RemoteControlConfig = {
       apiKey: 'test',
