@@ -11,7 +11,7 @@
  */
 
 import { Request, Response, NextFunction, Router } from 'express';
-import { timingSafeEqual } from 'crypto';
+import { timingSafeEqual, createHash } from 'crypto';
 
 // =============================================================================
 // Types and Interfaces
@@ -224,23 +224,13 @@ function validateUserId(userId: string): boolean {
 
 /**
  * Timing-safe string comparison using Node's crypto.timingSafeEqual
- * Prevents timing attacks on API key comparison
+ * Hashes both inputs to fixed length to prevent leaking length info
  */
 function safeCompare(a: string, b: string): boolean {
-  // Use a fixed-length comparison to avoid leaking length info
-  // Hash both inputs to fixed length before comparing
-  const bufA = Buffer.from(a);
-  const bufB = Buffer.from(b);
-
-  // If lengths differ, still do a constant-time comparison
-  // to avoid leaking length information via timing
-  if (bufA.length !== bufB.length) {
-    // Compare against itself to maintain constant time, then return false
-    timingSafeEqual(bufA, bufA);
-    return false;
-  }
-
-  return timingSafeEqual(bufA, bufB);
+  // Hash both inputs to fixed-length (32 bytes) to prevent length leakage
+  const hashA = createHash('sha256').update(a).digest();
+  const hashB = createHash('sha256').update(b).digest();
+  return timingSafeEqual(hashA, hashB);
 }
 
 // =============================================================================
