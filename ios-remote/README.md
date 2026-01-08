@@ -61,9 +61,12 @@ These remotes typically send:
 1. Open the Teleprompter Remote app
 2. Tap the gear icon (⚙️) to open Settings
 3. Enter your server URL:
-   - Local development: `http://YOUR_COMPUTER_IP:3000`
-   - ngrok: `https://your-ngrok-url.ngrok.io`
-4. Enter your API key (from `REMOTE_CONTROL_API_KEY` in server .env)
+   - **Fly.io (production)**: `https://your-app-name.fly.dev`
+   - **ngrok (local dev)**: `https://your-ngrok-url.ngrok.io`
+   - **Local network**: `http://YOUR_COMPUTER_IP:3000` (phone must be on same WiFi)
+4. Enter your API key (the `REMOTE_CONTROL_API_KEY` from server config)
+   - Fly.io: Set via `fly secrets set REMOTE_CONTROL_API_KEY=your_secret`
+   - Local: Set in `.env` file
 5. Tap "Refresh Sessions" to see active teleprompter sessions
 6. Select the session to control
 
