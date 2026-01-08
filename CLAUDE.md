@@ -46,7 +46,7 @@ The `ios-remote/` directory contains a SwiftUI app that captures Bluetooth HID k
 
 **Requirements**:
 - Apple Developer Account ($99/year) - Required to install on physical iPhone
-- Mac with Xcode 15.0+
+- Mac with macOS Sequoia 15.6+ and Xcode 26+
 - iPhone with iOS 16.0+ (physical device required, simulator doesn't support Bluetooth HID)
 
 **Quick Start**:
