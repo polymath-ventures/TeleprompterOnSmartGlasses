@@ -48,6 +48,54 @@ A teleprompter app for MentraOS smart glasses that displays scrolling text with 
 
 The app supports external control via HTTP API, enabling use with Bluetooth presentation remotes through the iOS companion app.
 
+### Setting Up the API Key
+
+The remote control API requires an API key for authentication. **If no key is configured, the remote control API is disabled entirely.**
+
+#### Local Development
+
+Add to your `.env` file:
+```bash
+REMOTE_CONTROL_API_KEY=your_secret_key_here
+```
+
+Generate a secure random key:
+```bash
+openssl rand -hex 32
+```
+
+#### Fly.io Production
+
+Set the secret on Fly.io:
+```bash
+fly secrets set REMOTE_CONTROL_API_KEY=your_secret_key_here
+```
+
+To update an existing secret:
+```bash
+fly secrets set REMOTE_CONTROL_API_KEY=new_secret_key_here
+```
+
+To view which secrets are configured (values are hidden):
+```bash
+fly secrets list
+```
+
+### iOS App Configuration
+
+In the iOS app Settings, configure the **Server URL** based on your environment:
+
+| Environment | Server URL |
+|-------------|------------|
+| **Fly.io (production)** | `https://teleprompteronsmartglasses.fly.dev` |
+| **ngrok (local dev)** | `https://your-subdomain.ngrok.io` (your ngrok URL) |
+| **Local network** | `http://YOUR_MAC_IP:3000` (e.g., `http://192.168.1.100:3000`) |
+
+**Important notes:**
+- For local network URLs, your iPhone must be on the same WiFi network as your Mac
+- The **API Key** field in the iOS app must match exactly what you set in `.env` (local) or via `fly secrets set` (production)
+- If you change the API key on the server, you must also update it in the iOS app
+
 ### API Endpoints
 
 All endpoints require Bearer token authentication with `REMOTE_CONTROL_API_KEY`:
@@ -126,9 +174,20 @@ The app is configured for deployment on [Fly.io](https://fly.io). See `fly.toml`
 # Deploy to Fly.io
 fly deploy
 
-# Set secrets
-fly secrets set MENTRAOS_API_KEY=your_key REMOTE_CONTROL_API_KEY=your_secret
+# Set all required secrets (first time setup)
+fly secrets set MENTRAOS_API_KEY=your_mentra_key PACKAGE_NAME=com.yourcompany.teleprompter REMOTE_CONTROL_API_KEY=your_secret
+
+# Update a single secret
+fly secrets set REMOTE_CONTROL_API_KEY=new_secret_key
+
+# List configured secrets (values hidden)
+fly secrets list
+
+# View deployment logs
+fly logs
 ```
+
+**Production URL:** `https://teleprompteronsmartglasses.fly.dev`
 
 ## License
 

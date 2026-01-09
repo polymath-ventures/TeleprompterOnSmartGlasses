@@ -663,11 +663,13 @@ describe('userId validation', () => {
     'a',
     '1234567890',
     'user-with-hyphen_and_underscore',
+    'user@domain.com',
+    'nick@polymathventures.com',
+    'user.name@example.org',
   ];
 
   const invalidUserIds = [
     'user<script>',
-    'user@domain.com',
     'user with spaces',
     '../../../etc/passwd',
     'user;drop table users',

@@ -218,8 +218,9 @@ export function createRateLimitMiddleware(config: RemoteControlConfig) {
  * Validate userId parameter
  */
 function validateUserId(userId: string): boolean {
-  // Allow alphanumeric, hyphens, underscores, max 128 chars
-  return /^[a-zA-Z0-9_-]{1,128}$/.test(userId);
+  // Allow alphanumeric, hyphens, underscores, dots, @ (for email-format userIds), max 128 chars
+  // Must not contain path traversal or other dangerous characters
+  return /^[a-zA-Z0-9_\-\.@]{1,128}$/.test(userId);
 }
 
 /**
