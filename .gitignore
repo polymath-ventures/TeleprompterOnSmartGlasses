@@ -42,3 +42,7 @@ temp/
 
 # Word frequency lists (using submodule instead)
 src/word_frequency_lists/
+
+# Xcode user-specific files
+xcuserdata/
+*.xcuserstate
