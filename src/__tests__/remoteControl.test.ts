@@ -58,6 +58,7 @@ function createMockTeleprompterManager(overrides: Partial<TeleprompterManagerInt
 function createMockApp(managers: Map<string, TeleprompterManagerInterface>): TeleprompterAppInterface {
   return {
     getUserTeleprompterManagers: () => managers,
+    triggerImmediateDisplayUpdate: () => {}, // No-op for tests
   };
 }
 

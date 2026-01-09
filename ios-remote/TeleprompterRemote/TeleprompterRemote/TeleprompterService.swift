@@ -178,6 +178,7 @@ class TeleprompterService: ObservableObject {
         do {
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
+            request.timeoutInterval = 5
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             if !apiKey.isEmpty {
                 request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
@@ -195,8 +196,6 @@ class TeleprompterService: ObservableObject {
         } catch {
             lastError = error.localizedDescription
         }
-
-        refreshSessions()
     }
 
     func goToLine(_ line: Int) async {
@@ -213,6 +212,7 @@ class TeleprompterService: ObservableObject {
         do {
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
+            request.timeoutInterval = 5
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             if !apiKey.isEmpty {
                 request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
@@ -231,8 +231,6 @@ class TeleprompterService: ObservableObject {
         } catch {
             lastError = error.localizedDescription
         }
-
-        refreshSessions()
     }
 
     private func sendScrollCommand(direction: String, lines: Int) async {
@@ -249,11 +247,12 @@ class TeleprompterService: ObservableObject {
         do {
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
+            request.timeoutInterval = 5
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             if !apiKey.isEmpty {
                 request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
             }
-                // Manual JSON encoding for mixed types
+            // Manual JSON encoding for mixed types
             let body: [String: Any] = ["direction": direction, "lines": lines]
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
 

@@ -65,6 +65,7 @@ export interface TeleprompterManagerInterface {
 // Interface for accessing app state
 export interface TeleprompterAppInterface {
   getUserTeleprompterManagers(): Map<string, TeleprompterManagerInterface>;
+  triggerImmediateDisplayUpdate(userId: string): void;
 }
 
 // =============================================================================
@@ -309,6 +310,9 @@ export function createRemoteControlRouter(
       manager.scrollBack(lineCount);
     }
 
+    // Trigger immediate display update to bypass scroll interval wait
+    app.triggerImmediateDisplayUpdate(userId);
+
     res.json({
       success: true,
       position: manager.getCurrentPosition()
@@ -336,6 +340,9 @@ export function createRemoteControlRouter(
     }
 
     manager.resetPosition();
+
+    // Trigger immediate display update to bypass scroll interval wait
+    app.triggerImmediateDisplayUpdate(userId);
 
     res.json({
       success: true,
@@ -370,6 +377,9 @@ export function createRemoteControlRouter(
     }
 
     manager.goToLine(Math.floor(position));
+
+    // Trigger immediate display update to bypass scroll interval wait
+    app.triggerImmediateDisplayUpdate(userId);
 
     res.json({
       success: true,

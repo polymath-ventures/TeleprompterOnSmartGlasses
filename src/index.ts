@@ -43,7 +43,8 @@ const MAX_SCROLL_SPEED_WPM = 500;
 const MIN_SCROLL_SPEED_WPM = 1;
 
 // Timing constants (in milliseconds)
-const SCROLL_INTERVAL_MS = 500;           // Update display twice per second
+const SCROLL_INTERVAL_NORMAL_MS = 500;    // Update display twice per second (default)
+const SCROLL_INTERVAL_HIGH_MS = 250;      // Update display four times per second (high responsiveness)
 const INITIAL_DISPLAY_DELAY_MS = 1000;    // Delay before showing initial text
 const SCROLL_START_DELAY_MS = 5000;       // Delay before scrolling begins
 const FINAL_LINE_DISPLAY_MS = 5000;       // How long to show final line
@@ -96,12 +97,15 @@ class TeleprompterManager {
   // Debug logging
   private debugLogging: boolean = false; // Enable verbose debug logging
 
+  // High responsiveness mode (faster display updates, uses more battery)
+  private highResponsiveness: boolean = false;
+
   constructor(text: string, lineWidth: number = DEFAULT_LINE_WIDTH, scrollSpeed: number = DEFAULT_SCROLL_SPEED_WPM, autoReplay: boolean = false, speechScrollEnabled: boolean = true, showEstimatedTotal: boolean = true) {
     this.text = text || this.getDefaultText();
     this.lineWidth = lineWidth;
     this.numberOfLines = DEFAULT_NUMBER_OF_LINES;
     this.scrollSpeed = scrollSpeed;
-    this.scrollInterval = SCROLL_INTERVAL_MS;
+    this.scrollInterval = SCROLL_INTERVAL_NORMAL_MS;
     this.autoReplay = autoReplay;
     this.speechScrollEnabled = speechScrollEnabled;
     this.showEstimatedTotal = showEstimatedTotal;
@@ -278,7 +282,19 @@ class TeleprompterManager {
   }
 
   getScrollInterval(): number {
+    // Use faster interval in high responsiveness mode
+    if (this.highResponsiveness) {
+      return SCROLL_INTERVAL_HIGH_MS;
+    }
     return this.scrollInterval;
+  }
+
+  setHighResponsiveness(enabled: boolean): void {
+    this.highResponsiveness = enabled;
+  }
+
+  getHighResponsiveness(): boolean {
+    return this.highResponsiveness;
   }
 
   setAutoReplay(enabled: boolean): void {
@@ -1060,6 +1076,8 @@ class TeleprompterApp extends TpaServer {
   private userTeleprompterManagers = new Map<string, TeleprompterManager>();
   private sessionTimers = new Map<string, SessionTimers>();
   private userSessions = new Map<string, Set<string>>(); // userId -> Set of sessionIds
+  private activeSessions = new Map<string, TpaSession>(); // sessionId -> TpaSession
+  private sessionToUser = new Map<string, string>(); // sessionId -> userId
 
   constructor() {
     if (!MENTRAOS_API_KEY) {
@@ -1085,6 +1103,8 @@ class TeleprompterApp extends TpaServer {
       this.userSessions.set(userId, new Set());
     }
     this.userSessions.get(userId)!.add(sessionId);
+    this.activeSessions.set(sessionId, session);
+    this.sessionToUser.set(sessionId, userId);
 
     // Create session timers entry early so settings handlers can store their unsubscribes
     if (!this.sessionTimers.has(sessionId)) {
@@ -1184,6 +1204,15 @@ class TeleprompterApp extends TpaServer {
       this.applySettings(session, sessionId, userId);
     }));
 
+    // Handle high responsiveness mode changes
+    unsubscribes.push(session.settings.onValueChange('high_responsiveness', (newValue, oldValue) => {
+      console.log(`High responsiveness changed for user ${userId}: ${oldValue} -> ${newValue}`);
+      this.applySettings(session, sessionId, userId);
+      // Restart scrolling to apply new interval
+      this.stopScrolling(sessionId);
+      this.startScrolling(session, sessionId, userId);
+    }));
+
     // Store unsubscribes in session timers for cleanup
     const timers = this.sessionTimers.get(sessionId);
     if (timers) {
@@ -1211,10 +1240,11 @@ class TeleprompterApp extends TpaServer {
       const stageDirectionDelimiter = session.settings.get<string>('stage_direction_delimiter', 'none') as DelimiterType;
       const stageDirectionDisplay = session.settings.get<string>('stage_direction_display', 'dimmed') as DisplayMode;
       const debugLogging = session.settings.get<boolean>('debug_logging', false);
+      const highResponsiveness = session.settings.get<boolean>('high_responsiveness', false);
 
       const lineWidth = convertLineWidth(lineWidthString, false);
 
-      console.log(`Applied settings for user ${userId}: lineWidth=${lineWidth}, scrollSpeed=${scrollSpeed}, numberOfLines=${numberOfLines}, autoReplay=${autoReplay}, speechScrollEnabled=${speechScrollEnabled}, showEstimatedTotal=${showEstimatedTotal}, stageDirectionDelimiter=${stageDirectionDelimiter}, stageDirectionDisplay=${stageDirectionDisplay}`);
+      console.log(`Applied settings for user ${userId}: lineWidth=${lineWidth}, scrollSpeed=${scrollSpeed}, numberOfLines=${numberOfLines}, autoReplay=${autoReplay}, speechScrollEnabled=${speechScrollEnabled}, showEstimatedTotal=${showEstimatedTotal}, stageDirectionDelimiter=${stageDirectionDelimiter}, stageDirectionDisplay=${stageDirectionDisplay}, highResponsiveness=${highResponsiveness}`);
 
       // Create or update teleprompter manager
       let teleprompterManager = this.userTeleprompterManagers.get(userId);
@@ -1228,6 +1258,7 @@ class TeleprompterApp extends TpaServer {
         teleprompterManager.setStageDirectionDelimiter(stageDirectionDelimiter);
         teleprompterManager.setStageDirectionDisplay(stageDirectionDisplay);
         teleprompterManager.setDebugLogging(debugLogging);
+        teleprompterManager.setHighResponsiveness(highResponsiveness);
         this.userTeleprompterManagers.set(userId, teleprompterManager);
         textChanged = true; // Always reset on first creation
       } else {
@@ -1245,6 +1276,7 @@ class TeleprompterApp extends TpaServer {
         teleprompterManager.setStageDirectionDelimiter(stageDirectionDelimiter);
         teleprompterManager.setStageDirectionDisplay(stageDirectionDisplay);
         teleprompterManager.setDebugLogging(debugLogging);
+        teleprompterManager.setHighResponsiveness(highResponsiveness);
       }
 
       console.log(`Text changed: ${textChanged}`);
@@ -1267,6 +1299,10 @@ class TeleprompterApp extends TpaServer {
 
     // Stop all timers for this session (this also removes from sessionTimers map)
     this.stopScrolling(sessionId);
+
+    // Clean up session tracking maps
+    this.activeSessions.delete(sessionId);
+    this.sessionToUser.delete(sessionId);
 
     // Remove this session from user's session set
     const userSessionSet = this.userSessions.get(userId);
@@ -1581,6 +1617,26 @@ class TeleprompterApp extends TpaServer {
    */
   getUserTeleprompterManagers(): Map<string, TeleprompterManager> {
     return this.userTeleprompterManagers;
+  }
+
+  /**
+   * Trigger an immediate display update for a user
+   * Used by the remote control API to bypass the scroll interval wait
+   */
+  triggerImmediateDisplayUpdate(userId: string): void {
+    const manager = this.userTeleprompterManagers.get(userId);
+    if (!manager) return;
+
+    const sessionIds = this.userSessions.get(userId);
+    if (!sessionIds) return;
+
+    // Update all active sessions for this user
+    for (const sessionId of sessionIds) {
+      const session = this.activeSessions.get(sessionId);
+      if (session) {
+        this.showTextToUser(session, sessionId, manager.getCurrentVisibleText());
+      }
+    }
   }
 }
 
