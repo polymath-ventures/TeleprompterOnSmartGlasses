@@ -1620,7 +1620,7 @@ const teleprompterApp = new TeleprompterApp();
 const expressApp = teleprompterApp.getExpressApp();
 expressApp.get('/health', (req, res) => {
   const memUsage = process.memoryUsage();
-  const activeSessions = teleprompterApp.getUserTeleprompterManagers().size;
+  const activeUserCount = teleprompterApp.getUserTeleprompterManagers().size;
 
   // Check if memory usage is too high (> 400MB heap used)
   const maxHeapMB = 400;
@@ -1631,7 +1631,7 @@ expressApp.get('/health', (req, res) => {
       status: 'unhealthy',
       reason: 'memory_pressure',
       app: PACKAGE_NAME,
-      activeSessions,
+      activeUsers: activeUserCount,
       heapUsedMB,
       uptimeSeconds: Math.round(process.uptime()),
     });
@@ -1641,7 +1641,7 @@ expressApp.get('/health', (req, res) => {
   res.json({
     status: 'healthy',
     app: PACKAGE_NAME,
-    activeSessions,
+    activeUsers: activeUserCount,
     heapUsedMB,
     uptimeSeconds: Math.round(process.uptime()),
   });
