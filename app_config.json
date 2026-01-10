@@ -137,12 +137,6 @@
         },
         {
             "type": "toggle",
-            "key": "high_responsiveness",
-            "label": "High Responsiveness Mode",
-            "defaultValue": false
-        },
-        {
-            "type": "toggle",
             "key": "debug_logging",
             "label": "Debug Logging",
             "defaultValue": false

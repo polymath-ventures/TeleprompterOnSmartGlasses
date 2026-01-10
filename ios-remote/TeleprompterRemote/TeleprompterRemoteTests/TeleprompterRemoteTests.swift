@@ -11,6 +11,7 @@ import Foundation
 
 // MARK: - SessionInfo Tests
 
+@MainActor
 struct SessionInfoTests {
 
     @Test func decodeSessionInfo() throws {
@@ -87,6 +88,7 @@ struct SessionInfoTests {
 
 // MARK: - SessionsResponse Tests
 
+@MainActor
 struct SessionsResponseTests {
 
     @Test func decodeEmptySessions() throws {
@@ -118,6 +120,7 @@ struct SessionsResponseTests {
 
 // MARK: - ControlResponse Tests
 
+@MainActor
 struct ControlResponseTests {
 
     @Test func decodeSuccessResponse() throws {
@@ -159,6 +162,7 @@ struct ControlResponseTests {
 
 // MARK: - TeleprompterError Tests
 
+@MainActor
 struct TeleprompterErrorTests {
 
     @Test func invalidURLErrorDescription() {
