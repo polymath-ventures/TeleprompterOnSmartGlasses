@@ -17,6 +17,7 @@ import {
   createRemoteControlRouter,
   DEFAULT_REMOTE_CONTROL_CONFIG,
   type TeleprompterManagerInterface,
+  type TeleprompterAppInterface,
 } from './remoteControl';
 
 // =============================================================================
@@ -1060,7 +1061,7 @@ class TeleprompterApp extends TpaServer {
   private userTeleprompterManagers = new Map<string, TeleprompterManager>();
   private sessionTimers = new Map<string, SessionTimers>();
   private userSessions = new Map<string, Set<string>>(); // userId -> Set of sessionIds
-  private activeSessions = new Map<string, TpaSession>(); // sessionId -> TpaSession
+  private sessionObjects = new Map<string, TpaSession>(); // sessionId -> TpaSession
   private sessionToUser = new Map<string, string>(); // sessionId -> userId
 
   constructor() {
@@ -1087,7 +1088,7 @@ class TeleprompterApp extends TpaServer {
       this.userSessions.set(userId, new Set());
     }
     this.userSessions.get(userId)!.add(sessionId);
-    this.activeSessions.set(sessionId, session);
+    this.sessionObjects.set(sessionId, session);
     this.sessionToUser.set(sessionId, userId);
 
     // Create session timers entry early so settings handlers can store their unsubscribes
@@ -1273,7 +1274,7 @@ class TeleprompterApp extends TpaServer {
     this.stopScrolling(sessionId);
 
     // Clean up session tracking maps
-    this.activeSessions.delete(sessionId);
+    this.sessionObjects.delete(sessionId);
     this.sessionToUser.delete(sessionId);
 
     // Remove this session from user's session set
@@ -1604,7 +1605,7 @@ class TeleprompterApp extends TpaServer {
 
     // Update all active sessions for this user
     for (const sessionId of sessionIds) {
-      const session = this.activeSessions.get(sessionId);
+      const session = this.sessionObjects.get(sessionId);
       if (session) {
         this.showTextToUser(session, sessionId, manager.getCurrentVisibleText());
       }
@@ -1650,7 +1651,7 @@ expressApp.get('/health', (req, res) => {
 if (DEFAULT_REMOTE_CONTROL_CONFIG.apiKey) {
   expressApp.use(require('express').json({ limit: '1mb' }));
   const remoteControlRouter = createRemoteControlRouter(
-    teleprompterApp as unknown as { getUserTeleprompterManagers: () => Map<string, TeleprompterManagerInterface> },
+    teleprompterApp as unknown as TeleprompterAppInterface,
     DEFAULT_REMOTE_CONTROL_CONFIG
   );
   expressApp.use('/api/remote', remoteControlRouter);
