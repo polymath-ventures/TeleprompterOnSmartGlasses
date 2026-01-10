@@ -280,3 +280,54 @@ struct AuthorizationTests {
         #expect(apiKey.isEmpty)
     }
 }
+
+// MARK: - URL Sanitization Tests
+
+struct URLSanitizationTests {
+
+    @Test func stripTrailingSlash() {
+        var url = "https://example.com/"
+        while url.hasSuffix("/") {
+            url.removeLast()
+        }
+        #expect(url == "https://example.com")
+    }
+
+    @Test func stripMultipleTrailingSlashes() {
+        var url = "https://example.com///"
+        while url.hasSuffix("/") {
+            url.removeLast()
+        }
+        #expect(url == "https://example.com")
+    }
+
+    @Test func preserveURLWithoutTrailingSlash() {
+        var url = "https://example.com"
+        while url.hasSuffix("/") {
+            url.removeLast()
+        }
+        #expect(url == "https://example.com")
+    }
+
+    @Test func preserveProtocolSlashes() {
+        var url = "https://example.com/"
+        while url.hasSuffix("/") {
+            url.removeLast()
+        }
+        // Should only strip trailing slash, not protocol slashes
+        #expect(url.contains("://"))
+        #expect(url == "https://example.com")
+    }
+
+    @Test func sanitizedURLBuildsCorrectEndpoint() {
+        var serverURL = "https://teleprompter.fly.dev/"
+        while serverURL.hasSuffix("/") {
+            serverURL.removeLast()
+        }
+        let endpoint = "\(serverURL)/api/remote/sessions"
+
+        // Should not have double slashes
+        #expect(!endpoint.contains("//api"))
+        #expect(endpoint == "https://teleprompter.fly.dev/api/remote/sessions")
+    }
+}

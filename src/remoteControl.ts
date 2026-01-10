@@ -304,19 +304,25 @@ export function createRemoteControlRouter(
       return;
     }
 
+    const startTime = Date.now();
+
     if (direction === 'forward') {
       manager.scrollForward(lineCount);
     } else {
       manager.scrollBack(lineCount);
     }
+    console.log(`[TIMING] Scroll command took ${Date.now() - startTime}ms`);
 
     // Trigger immediate display update to bypass scroll interval wait
+    const updateStart = Date.now();
     app.triggerImmediateDisplayUpdate(userId);
+    console.log(`[TIMING] triggerImmediateDisplayUpdate took ${Date.now() - updateStart}ms`);
 
     res.json({
       success: true,
       position: manager.getCurrentPosition()
     } as ControlResponse);
+    console.log(`[TIMING] Total scroll request: ${Date.now() - startTime}ms`);
   });
 
   /**

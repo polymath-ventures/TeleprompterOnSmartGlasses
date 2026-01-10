@@ -61,7 +61,18 @@ enum TeleprompterError: LocalizedError {
 @MainActor
 class TeleprompterService: ObservableObject {
     @Published var serverURL: String {
-        didSet { UserDefaults.standard.set(serverURL, forKey: "serverURL") }
+        didSet {
+            // Strip trailing slashes to prevent double-slash URLs
+            var sanitized = serverURL
+            while sanitized.hasSuffix("/") {
+                sanitized.removeLast()
+            }
+            if sanitized != serverURL {
+                serverURL = sanitized
+                return
+            }
+            UserDefaults.standard.set(serverURL, forKey: "serverURL")
+        }
     }
     @Published var apiKey: String {
         didSet { UserDefaults.standard.set(apiKey, forKey: "apiKey") }
@@ -75,7 +86,12 @@ class TeleprompterService: ObservableObject {
     private var refreshTimer: Timer?
 
     init() {
-        self.serverURL = UserDefaults.standard.string(forKey: "serverURL") ?? "http://localhost:3000"
+        var storedURL = UserDefaults.standard.string(forKey: "serverURL") ?? "http://localhost:3000"
+        // Strip trailing slashes from stored URL
+        while storedURL.hasSuffix("/") {
+            storedURL.removeLast()
+        }
+        self.serverURL = storedURL
         self.apiKey = UserDefaults.standard.string(forKey: "apiKey") ?? ""
     }
 

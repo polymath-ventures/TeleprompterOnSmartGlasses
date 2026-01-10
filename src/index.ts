@@ -1598,16 +1598,28 @@ class TeleprompterApp extends TpaServer {
    */
   triggerImmediateDisplayUpdate(userId: string): void {
     const manager = this.userTeleprompterManagers.get(userId);
-    if (!manager) return;
+    if (!manager) {
+      console.log(`[TIMING] triggerImmediateDisplayUpdate: No manager for ${userId}`);
+      return;
+    }
 
     const sessionIds = this.userSessions.get(userId);
-    if (!sessionIds) return;
+    if (!sessionIds) {
+      console.log(`[TIMING] triggerImmediateDisplayUpdate: No sessions for ${userId}`);
+      return;
+    }
+
+    console.log(`[TIMING] triggerImmediateDisplayUpdate: Found ${sessionIds.size} sessions for ${userId}`);
 
     // Update all active sessions for this user
     for (const sessionId of sessionIds) {
       const session = this.sessionObjects.get(sessionId);
       if (session) {
+        const showStart = Date.now();
         this.showTextToUser(session, sessionId, manager.getCurrentVisibleText());
+        console.log(`[TIMING] showTextToUser for ${sessionId} took ${Date.now() - showStart}ms`);
+      } else {
+        console.log(`[TIMING] Session ${sessionId} not found in sessionObjects`);
       }
     }
   }
