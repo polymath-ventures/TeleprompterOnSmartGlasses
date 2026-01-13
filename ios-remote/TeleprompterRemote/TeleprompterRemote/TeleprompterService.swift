@@ -255,8 +255,11 @@ class TeleprompterService: ObservableObject {
             return
         }
 
-        guard let url = URL(string: "\(serverURL)/api/remote/control/\(userId)/scroll") else {
-            lastError = "Invalid URL"
+        let urlString = "\(serverURL)/api/remote/control/\(userId)/scroll"
+        print("[DEBUG] Scroll URL: \(urlString)")
+
+        guard let url = URL(string: urlString) else {
+            lastError = "Invalid URL: \(urlString)"
             return
         }
 
@@ -267,23 +270,35 @@ class TeleprompterService: ObservableObject {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             if !apiKey.isEmpty {
                 request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+                print("[DEBUG] Auth header set")
+            } else {
+                print("[DEBUG] No API key configured!")
             }
             // Manual JSON encoding for mixed types
             let body: [String: Any] = ["direction": direction, "lines": lines]
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-            let (data, _) = try await URLSession.shared.data(for: request)
-            let response = try JSONDecoder().decode(ControlResponse.self, from: data)
+            print("[DEBUG] Sending scroll request...")
+            let (data, response) = try await URLSession.shared.data(for: request)
 
-            if response.success {
+            if let httpResponse = response as? HTTPURLResponse {
+                print("[DEBUG] HTTP status: \(httpResponse.statusCode)")
+            }
+
+            let controlResponse = try JSONDecoder().decode(ControlResponse.self, from: data)
+
+            if controlResponse.success {
                 let directionText = direction == "forward" ? "Forward" : "Back"
                 lastAction = "\(directionText) \(lines) line\(lines == 1 ? "" : "s")"
                 lastError = nil
+                print("[DEBUG] Scroll success, position: \(controlResponse.position ?? -1)")
             } else {
-                lastError = response.message
+                lastError = controlResponse.message
+                print("[DEBUG] Scroll failed: \(controlResponse.message ?? "unknown")")
             }
         } catch {
             lastError = error.localizedDescription
+            print("[DEBUG] Scroll error: \(error)")
         }
     }
 

@@ -216,7 +216,8 @@ struct ContentView: View {
                             .font(.caption)
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.bordered)
+                .tint(.blue)
                 .controlSize(.large)
             }
         }
